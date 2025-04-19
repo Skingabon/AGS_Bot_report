@@ -1,21 +1,9 @@
 import 'dotenv/config';
 import { google } from 'googleapis';
-export interface Pipeline {
-  id: number;
-  name: string;
-}
+import { Lead, noteType, Pipeline } from './interfaces';
 
-export interface Lead {
-  id: number;
-  name: string;
-  price: number;
-  status_id: number;
-  pipeline_id: number;
-  created_at: number;
-  updated_at: number;
-}
-
-const SPREADSHEET_ID = '1uQBd97IuX5BL6uY6MWkrpECr7YXu9H5uRDjhjwkom-8';
+//TODO: заменить на нужное ID таблицы
+const SPREADSHEET_ID = '16Gr85TxzbdzXNaZ4UKpxgOa-NeLYQJTIrSB-ol-8CUE';
 const SHEET_NAME = 'Time';
 const TOKEN = process.env.FETCH_API_TOKEN;
 const auth = new google.auth.GoogleAuth({
@@ -27,45 +15,6 @@ export const domain = 'agse'; // Замените на ваш домен в amoC
 // URL API amoCRM
 const apiUrl = `https://${domain}.amocrm.ru/api/v4/leads`;
 const pipelinesUrl = `https://${domain}.amocrm.ru/api/v4/leads/pipelines`; // URL для получения воронок
-
-type noteType = {
-  id: number;
-  entity_id: number;
-  created_by: number;
-  updated_by: number;
-  created_at: number;
-  updated_at: number;
-  responsible_user_id: number;
-  group_id: number;
-  note_type: string;
-  params: {
-    thread_id: string;
-    message_id: string;
-    private: boolean;
-    income: boolean;
-    from: {
-      email: string;
-      name: string;
-    };
-    to: {
-      email: string;
-      name: string;
-    };
-    subject: string;
-    access_granted: number;
-    content_summary: string;
-    delivery: {
-      status: string;
-      time: number;
-    };
-  };
-  account_id: number;
-  _links: {
-    self: {
-      href: string;
-    };
-  };
-};
 
 const token = process.env.FETCH_API_TOKEN;
 
@@ -136,30 +85,34 @@ export async function createGoogleFields(data: LeadRow) {
     spreadsheetId: SPREADSHEET_ID,
     range: 'A1', // Диапазон, начиная с первой строки
     valueInputOption: 'RAW',
-    resource: data,
+    requestBody: {
+      values: data.values,
+    },
   });
 }
 
-export async function getAllPipelines() {
+export async function getAllPipelines(): Promise<Pipeline[]> {
   const response: any = await fetch(pipelinesUrl, {
     headers: {
-      Authorization: TOKEN,
+      Authorization: `Bearer ${TOKEN}`,
     },
   });
-  return response.data._embedded.pipelines as Pipeline[];
+  const res = await response.json();
+  return res._embedded.pipelines;
 }
 
 export async function getLeadToday(
   startTimestamp: number,
   endTimestamp: number,
-) {
+): Promise<Lead[]> {
   const response: any = await fetch(
     `${apiUrl}?filter[created_at][from]=${startTimestamp}&filter[created_at][to]=${endTimestamp}`,
     {
       headers: {
-        Authorization: TOKEN,
+        Authorization: `Bearer ${TOKEN}`,
       },
     },
   );
-  return response.data._embedded.leads as Lead[];
+  const res = await response.json();
+  return res._embedded.leads;
 }

@@ -1,5 +1,5 @@
 import 'dotenv/config';
-import { Bot, InlineKeyboard, Keyboard } from 'grammy';
+import { Bot, InlineKeyboard } from 'grammy';
 import {
   createGoogleFields,
   domain,
@@ -7,7 +7,6 @@ import {
   getGoogleSheetData,
   getLeadToday,
   getNotesByLead,
-  Pipeline,
   updateGoogleField,
   updateLeadDateCall,
 } from './api';
@@ -19,40 +18,81 @@ bot.api.setMyCommands([
   { command: 'start', description: 'Start AGS_Bot_Report' },
 ]);
 
-const menuKeyboard = new Keyboard()
-  .text('/generate')
+const menuKeyboard = new InlineKeyboard()
+  .text('Заполнить исходящие звонки', 'generate')
   .row() // Вторая строка
   // .resized() // Автоматический размер кнопок
   // .persistent(); // Меню не скрывается после нажатия
-  .text('/report-time')
+  .text('Создать отчет за последний день', 'report-time')
   .row(); // Вторая строка
+
 bot.command('start', async (ctx) => {
   await ctx.reply('Выберите команду:', {
     reply_markup: menuKeyboard,
   });
 });
-bot.command('report-time', async (ctx) => {
+
+bot.callbackQuery('generate', async (ctx) => {
+  await ctx.reply('Начинаем!');
+  const idsLead = await getGoogleSheetData();
+  let i = 2;
+  for (const el of idsLead.flat()) {
+    const idLead = Number(el);
+    try {
+      const note = await getNotesByLead(idLead);
+
+      if (!note) {
+        console.log('note', note);
+        throw new Error(`Сделка ${idLead} завершена `);
+      }
+      const outgoingCalls = note
+          .filter((el) => el.note_type === 'call_out')
+          .sort((a, b) => a.created_at - b.created_at);
+
+      if (outgoingCalls.length === 0) {
+        throw new Error(`Для сделки ${idLead} исходящих звонков не найдено`);
+      }
+
+      const firstCall = outgoingCalls[0]; // Берем самый первый звонок
+      const date = getDate(firstCall.created_at);
+      await Promise.all([
+        updateLeadDateCall(idLead, date),
+        updateGoogleField(date, i),
+      ]);
+    } catch (err) {
+      if (err instanceof Error) await ctx.reply(`Ошибка: ${err.message}`);
+    } finally {
+      i++;
+    }
+  }
+  await ctx.reply('Готово!');
+})
+
+bot.callbackQuery('report-time', async (ctx) => {
+  await ctx.reply('Начинаю создавать таблицу')
   try {
     const pipelinesResponse = await getAllPipelines();
+    await ctx.reply('Нашел данные о воронке')
     const pipelines = pipelinesResponse;
     const pipelinesMap = pipelines.reduce(
-      (
-        acc: { [key: number]: string },
-        pipeline: { id: number; name: string },
-      ) => {
-        acc[pipeline.id] = pipeline.name;
-        return acc;
-      },
-      {},
+        (
+            acc: { [key: number]: string },
+            pipeline: { id: number; name: string },
+        ) => {
+          acc[pipeline.id] = pipeline.name;
+          return acc;
+        },
+        {},
     );
     // Пример временных меток (начало и конец дня)
     const startTimestamp = Math.floor(
-      new Date('2023-04-18T00:00:00').getTime() / 1000,
+        new Date('2023-04-18T00:00:00').getTime() / 1000,
     );
     const endTimestamp = Math.floor(
-      new Date('2023-04-18T23:59:59').getTime() / 1000,
+        new Date('2023-04-18T23:59:59').getTime() / 1000,
     );
     const response = await getLeadToday(startTimestamp, endTimestamp);
+    await ctx.reply('Собрал все сделки за сегодняшний день')
     const leads = response;
 
     if (!leads || leads.length === 0) {
@@ -101,46 +141,12 @@ bot.command('report-time', async (ctx) => {
         ...googleSheetsData,
       ],
     };
+    await ctx.reply('Добавляю в таблицу')
     await createGoogleFields(resource);
+    await ctx.reply('Все готово!')
   } catch (error) {
     if (error instanceof Error) await ctx.reply('error' + error.message);
   }
-});
-
-bot.command('generate', async (ctx) => {
-  await ctx.reply('Начинаем!');
-  const idsLead = await getGoogleSheetData();
-  let i = 2;
-  for (const el of idsLead.flat()) {
-    const idLead = Number(el);
-    try {
-      const note = await getNotesByLead(idLead);
-
-      if (!note) {
-        console.log('note', note);
-        throw new Error(`Сделка ${idLead} завершена `);
-      }
-      const outgoingCalls = note
-        .filter((el) => el.note_type === 'call_out')
-        .sort((a, b) => a.created_at - b.created_at);
-
-      if (outgoingCalls.length === 0) {
-        throw new Error(`Для сделки ${idLead} исходящих звонков не найдено`);
-      }
-
-      const firstCall = outgoingCalls[0]; // Берем самый первый звонок
-      const date = getDate(firstCall.created_at);
-      await Promise.all([
-        updateLeadDateCall(idLead, date),
-        updateGoogleField(date, i),
-      ]);
-    } catch (err) {
-      if (err instanceof Error) await ctx.reply(`Ошибка: ${err.message}`);
-    } finally {
-      i++;
-    }
-  }
-  await ctx.reply('Готово!');
-});
+})
 
 bot.start();
