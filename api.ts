@@ -1,12 +1,32 @@
 import 'dotenv/config';
 import { google } from 'googleapis';
+export interface Pipeline {
+  id: number;
+  name: string;
+}
 
-const SPREADSHEET_ID = '1zegjD4NH8qx4VRbOfNy1hYBEDr1muIObJ6kvibWJnTw';
-const SHEET_NAME = 'Отчет';
+export interface Lead {
+  id: number;
+  name: string;
+  price: number;
+  status_id: number;
+  pipeline_id: number;
+  created_at: number;
+  updated_at: number;
+}
+
+const SPREADSHEET_ID = '1uQBd97IuX5BL6uY6MWkrpECr7YXu9H5uRDjhjwkom-8';
+const SHEET_NAME = 'Time';
+const TOKEN = process.env.FETCH_API_TOKEN;
 const auth = new google.auth.GoogleAuth({
   keyFile: process.env.PATH_API_GOOGLE,
   scopes: ['https://www.googleapis.com/auth/spreadsheets'],
 });
+// Домен вашего amoCRM
+export const domain = 'agse'; // Замените на ваш домен в amoCRM
+// URL API amoCRM
+const apiUrl = `https://${domain}.amocrm.ru/api/v4/leads`;
+const pipelinesUrl = `https://${domain}.amocrm.ru/api/v4/leads/pipelines`; // URL для получения воронок
 
 type noteType = {
   id: number;
@@ -50,7 +70,7 @@ type noteType = {
 const token = process.env.FETCH_API_TOKEN;
 
 export const getNotesByLead = (id: number): Promise<noteType[]> => {
-  return fetch(`https://agse.amocrm.ru/api/v4/leads/${id}/notes`, {
+  return fetch(`https://${domain}.amocrm.ru/api/v4/leads/${id}/notes`, {
     headers: {
       Authorization: 'Bearer ' + token,
     },
@@ -67,7 +87,7 @@ export const getNotesByLead = (id: number): Promise<noteType[]> => {
 };
 
 export const updateLeadDateCall = (id: number, date: string) => {
-  return fetch(`https://agse.amocrm.ru/api/v4/leads/${id}`, {
+  return fetch(`https://${domain}.amocrm.ru/api/v4/leads/${id}`, {
     method: 'PATCH',
     headers: {
       Authorization: 'Bearer ' + token,
@@ -104,4 +124,42 @@ export async function updateGoogleField(data: string, index: number) {
   });
 
   return res;
+}
+
+type LeadRow = {
+  values: (string | number)[][];
+};
+
+export async function createGoogleFields(data: LeadRow) {
+  const sheets = google.sheets({ version: 'v4', auth });
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SPREADSHEET_ID,
+    range: 'A1', // Диапазон, начиная с первой строки
+    valueInputOption: 'RAW',
+    resource: data,
+  });
+}
+
+export async function getAllPipelines() {
+  const response: any = await fetch(pipelinesUrl, {
+    headers: {
+      Authorization: TOKEN,
+    },
+  });
+  return response.data._embedded.pipelines as Pipeline[];
+}
+
+export async function getLeadToday(
+  startTimestamp: number,
+  endTimestamp: number,
+) {
+  const response: any = await fetch(
+    `${apiUrl}?filter[created_at][from]=${startTimestamp}&filter[created_at][to]=${endTimestamp}`,
+    {
+      headers: {
+        Authorization: TOKEN,
+      },
+    },
+  );
+  return response.data._embedded.leads as Lead[];
 }

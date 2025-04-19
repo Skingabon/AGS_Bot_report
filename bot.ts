@@ -1,8 +1,13 @@
 import 'dotenv/config';
 import { Bot, InlineKeyboard, Keyboard } from 'grammy';
 import {
+  createGoogleFields,
+  domain,
+  getAllPipelines,
   getGoogleSheetData,
+  getLeadToday,
   getNotesByLead,
+  Pipeline,
   updateGoogleField,
   updateLeadDateCall,
 } from './api';
@@ -10,16 +15,96 @@ import { getDate } from './helper';
 
 const bot = new Bot(process.env.BOT_API_KEY || '');
 
+bot.api.setMyCommands([
+  { command: 'start', description: 'Start AGS_Bot_Report' },
+]);
+
 const menuKeyboard = new Keyboard()
   .text('/generate')
   .row() // Вторая строка
-  .resized() // Автоматический размер кнопок
-  .persistent(); // Меню не скрывается после нажатия
-
+  // .resized() // Автоматический размер кнопок
+  // .persistent(); // Меню не скрывается после нажатия
+  .text('/report-time')
+  .row(); // Вторая строка
 bot.command('start', async (ctx) => {
   await ctx.reply('Выберите команду:', {
     reply_markup: menuKeyboard,
   });
+});
+bot.command('report-time', async (ctx) => {
+  try {
+    const pipelinesResponse = await getAllPipelines();
+    const pipelines = pipelinesResponse;
+    const pipelinesMap = pipelines.reduce(
+      (
+        acc: { [key: number]: string },
+        pipeline: { id: number; name: string },
+      ) => {
+        acc[pipeline.id] = pipeline.name;
+        return acc;
+      },
+      {},
+    );
+    // Пример временных меток (начало и конец дня)
+    const startTimestamp = Math.floor(
+      new Date('2023-04-18T00:00:00').getTime() / 1000,
+    );
+    const endTimestamp = Math.floor(
+      new Date('2023-04-18T23:59:59').getTime() / 1000,
+    );
+    const response = await getLeadToday(startTimestamp, endTimestamp);
+    const leads = response;
+
+    if (!leads || leads.length === 0) {
+      throw new Error('No leads found for the given filter.');
+    }
+
+    // Преобразование данных для загрузки в Google Sheets
+    const googleSheetsData = leads.map((lead) => {
+      // Получаем название воронки по ID
+      const pipelineName = pipelinesMap[lead.pipeline_id] || 'Не найдено';
+
+      // Добавляем название статуса в зависимости от ID статуса
+      let statusName = '';
+      if (lead.status_id === 142) {
+        statusName = 'Успешно реализовано';
+      } else if (lead.status_id === 143) {
+        statusName = 'Закрыто и не реализовано';
+      }
+
+      return [
+        lead.id, // ID
+        lead.name,
+        lead.price,
+        lead.status_id, // ID статуса
+        statusName, // Название статуса
+        pipelineName, // Название воронки
+        new Date(lead.created_at * 1000).toLocaleString(),
+        new Date(lead.updated_at * 1000).toLocaleString(),
+        `https://${domain}.amocrm.ru/leads/detail/${lead.id}`, // Ссылка на лид
+      ];
+    });
+    // Подготовка данных для загрузки в таблицу
+    const resource = {
+      values: [
+        [
+          'ID',
+          'Название',
+          'Цена',
+          'Статус ID',
+          'Название статуса',
+          'Название Воронки',
+          'Дата создания',
+          'Дата обновления',
+          'Ссылка на лид',
+        ],
+        ...googleSheetsData,
+      ],
+    };
+    await createGoogleFields(resource);
+  } catch (error) {
+    if (error instanceof Error) await ctx.reply('error' + error.message);
+  }
 });
 
 bot.command('generate', async (ctx) => {
@@ -57,88 +142,5 @@ bot.command('generate', async (ctx) => {
   }
   await ctx.reply('Готово!');
 });
-
-//
-// bot.command('start', async (ctx: Context) => {
-//   // await ctx.reply('Привет! Я - бот');
-//   const keyboard = new InlineKeyboard()
-//     .text('N2', 'button_N2')
-//     .row()
-//     .text('O2', 'button_O2')
-//     .row()
-//     .text('Водород', 'button_vod')
-//     .row()
-//     .text('Осушка', 'button_osu')
-//     .row();
-//   await ctx.reply('Выберите сферу применения:', {
-//     reply_markup: keyboard,
-//   });
-// });
-
-//
-bot.callbackQuery('button_N2', async (ctx) => {
-  const keyboard = new InlineKeyboard()
-    .text('Лазерная резка', 'button_laser')
-    .row()
-    .text('Пищевая', 'button_eda')
-    .row()
-    .text('Электроника', 'button_electro')
-    .row()
-    .text('Нефтехимия', 'button_neft')
-    .row()
-    .text('Лаборатория', 'button_laba')
-    .row()
-    .text('Другое', 'button_other')
-    .row();
-  await ctx.reply(
-    'Выберите вашу отрасль применения оборудования, мы примерно поймем параметры нужного оборудования:',
-    {
-      reply_markup: keyboard,
-    },
-  );
-});
-bot.callbackQuery('button_laser', async (ctx) => {
-  const keyboard = new InlineKeyboard()
-    .text('ДА', 'button_yes')
-    .row()
-    .text('НЕТ', 'button_no')
-    .row();
-
-  await ctx.reply(
-    'Стоимость узлов завист от производительности, вам известны потребляемый объем, чистота газа и давление?',
-    {
-      reply_markup: keyboard,
-    },
-  );
-});
-bot.callbackQuery('button_no', async (ctx) => {
-  await ctx.reply('Введите Ваши контакты и менеджер свяжется с Вами');
-  const keyboard = new InlineKeyboard()
-    .url('Позвонить нам с нашего сайта', 'https://agse.ru')
-    .row();
-
-  await ctx.reply('📞', {
-    reply_markup: keyboard,
-  });
-});
-
-bot.callbackQuery('button_yes', async (ctx) => {
-  await ctx.reply(
-    '1. Введите, какой объем потребления в час (например 10 литров или 3 куба)?',
-  );
-  await ctx.reply('2. Введите чистоту азота необходимую.');
-  await ctx.reply('3. Введите давление в системе.');
-});
-
-bot.callbackQuery('button_vod', async (ctx) => {
-  await ctx.answerCallbackQuery({ text: 'press vod' });
-  // await ctx.editMessageText('press');
-});
-bot.callbackQuery('button_osu', async (ctx) => {
-  await ctx.answerCallbackQuery({ text: 'press osu' });
-  // await ctx.editMessageText('press');
-});
-
-bot.on('message:text', async (ctx) => {});
 
 bot.start();
