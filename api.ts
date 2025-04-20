@@ -58,7 +58,7 @@ export async function getGoogleSheetData(
   const sheets = google.sheets({ version: 'v4', auth });
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEET_NAME}!${field}2:B150`,
+    range: `${SHEET_NAME}!${field}2:${field}2000`,
   });
   return response.data.values || [];
 }
@@ -81,7 +81,7 @@ type LeadRow = {
 
 export async function createGoogleFields(data: LeadRow) {
   const sheets = google.sheets({ version: 'v4', auth });
-  await sheets.spreadsheets.values.update({
+  await sheets.spreadsheets.values.append({
     spreadsheetId: SPREADSHEET_ID,
     range: 'A1', // Диапазон, начиная с первой строки
     valueInputOption: 'RAW',
