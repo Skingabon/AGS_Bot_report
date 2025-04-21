@@ -143,49 +143,8 @@ export const getContactsByIdLead = async (
     },
   );
   const data = await res.json();
-  console.log(data);
   return data._embedded.links;
 };
-
-// interface IGetMessagesByIdContact {
-//   id: number;
-//   entity_id: number;
-//   created_by: number;
-//   updated_by: number;
-//   created_at: number;
-//   updated_at: number;
-//   responsible_user_id: number;
-//   group_id: number;
-//   note_type: string;
-//   params: {
-//     thread_id: string;
-//     message_id: string;
-//     private: boolean;
-//     income: boolean;
-//     from: {
-//       email: string;
-//       name: string;
-//     };
-//     to: {
-//       email: string;
-//       name: string;
-//     };
-//     subject: string;
-//     access_granted: number;
-//     content_summary: string;
-//     attach_cnt: number;
-//     delivery: {
-//       status: string;
-//       time: number;
-//     };
-//   };
-//   account_id: number;
-//   _links: {
-//     self: {
-//       href: string;
-//     };
-//   };
-// }
 
 export const getNotesByIdContact = async (
   idContact: number,
