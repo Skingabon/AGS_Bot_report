@@ -18,21 +18,23 @@ const pipelinesUrl = `https://${domain}.amocrm.ru/api/v4/leads/pipelines`; // UR
 
 const token = process.env.FETCH_API_TOKEN;
 
-export const getNotesByLead = (id: number): Promise<noteType[]> => {
-  return fetch(`https://${domain}.amocrm.ru/api/v4/leads/${id}/notes`, {
-    headers: {
-      Authorization: 'Bearer ' + token,
+export const getNotesByLead = async (
+  id: number,
+): Promise<noteType[] | null> => {
+  const res = await fetch(
+    `https://${domain}.amocrm.ru/api/v4/leads/${id}/notes`,
+    {
+      headers: {
+        Authorization: 'Bearer ' + token,
+      },
     },
-  })
-    .then((res) => {
-      if (res.status === 204) {
-        return null; // или пустой массив в зависимости от логики
-      }
-      return res.json();
-    })
-    .then((res) => {
-      return res._embedded.notes;
-    });
+  );
+
+  if (res.status === 204) return null;
+  const data: { __embedded: { notes: noteType[] } } = await res.json();
+
+  if (!data.__embedded) return null;
+  return data.__embedded.notes;
 };
 
 export const updateLeadDateCall = (id: number, date: string) => {

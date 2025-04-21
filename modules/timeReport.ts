@@ -25,7 +25,8 @@ export const updateIncomingCall = async (ctx: Context | null) => {
       const note = await getNotesByLead(idLead);
 
       if (!note) {
-        throw new Error(`Сделка ${idLead} завершена `);
+        continue;
+        // throw new Error(`Сделка ${idLead} завершена `);
       }
       const outgoingCalls = note
         .filter((el) => el.note_type === 'call_out')
@@ -95,7 +96,7 @@ export const createReportTimeToday = async (ctx: Context | null) => {
         const note = await getNotesByLead(idLead);
 
         if (!note) {
-          dateIncomingCallArr.push('Сделка звершена');
+          dateIncomingCallArr.push('Нет звонков');
           continue;
         }
         const outgoingCalls = note
