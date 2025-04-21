@@ -50,6 +50,18 @@ export const updateIncomingCall = async (ctx: Context | null) => {
   await ctx.reply('Готово!');
 };
 
+//новые поля
+function getFieldValue(fields: any[], fieldName: string): string | null {
+  const field = fields.find(f => f.field_name === fieldName);
+  return field?.values?.[0]?.value || null;
+}
+
+function formatDate(value: string | number | null): string {
+  if (!value) return '';
+  return new Date(Number(value) * 1000).toLocaleString('ru-RU');
+}
+//
+
 export const createReportTimeToday = async (ctx: Context | null) => {
   if (!ctx) return;
   await ctx.reply('Начинаю создавать таблицу');
@@ -88,7 +100,7 @@ export const createReportTimeToday = async (ctx: Context | null) => {
       throw new Error('No leads found for the given filter.');
     }
     let dateIncomingCallArr: string[] = [];
-    await ctx.reply('Береу звонки из сделки');
+    await ctx.reply('Беру звонки из сделки');
     for (let i = 0; i < leads.length; i++) {
       const idLead = leads[i].id;
       try {
@@ -132,6 +144,15 @@ export const createReportTimeToday = async (ctx: Context | null) => {
         statusName = 'Закрыто и не реализовано';
       }
 
+      //новые поля
+      const fields = lead.custom_fields_values || [];
+
+      const omTakenAt = formatDate(getFieldValue(fields, 'Дата/время взято в работу'));
+      const omTakenBy = getFieldValue(fields, 'ОМ Взято в работу') || '';
+      
+      const omAssignedAt = formatDate(getFieldValue(fields, 'Время ОМ квал серия'));
+      const omAssignedBy = getFieldValue(fields, 'ОМ Квал серия') || '';
+//
       return [
         lead.id, // ID
         lead.name,
@@ -143,6 +164,10 @@ export const createReportTimeToday = async (ctx: Context | null) => {
         new Date(lead.updated_at * 1000).toLocaleString(),
         `https://${domain}.amocrm.ru/leads/detail/${lead.id}`, // Ссылка на лид
         dateIncomingCallArr[index],
+        omTakenAt,
+  omTakenBy,
+  omAssignedAt,
+  omAssignedBy,
       ];
     });
     //TODO: не уверен что нужно каждый раз создавать заголовки
@@ -159,6 +184,10 @@ export const createReportTimeToday = async (ctx: Context | null) => {
           'Дата обновления',
           'Ссылка на лид',
           'Дата исходящего звонка',
+          'Дата/время "ОМ Взято в работу"',
+      'Менеджер "ОМ Взято в работу"',
+      'Дата/время "Время ОМ квал серия"',
+      'Менеджер "ОМ Квал серия"',
         ],
         ...googleSheetsData,
       ],

@@ -3,7 +3,7 @@ import { google } from 'googleapis';
 import { Lead, noteType, Pipeline } from './interfaces';
 
 //TODO: заменить на нужное ID таблицы
-const SPREADSHEET_ID = '16Gr85TxzbdzXNaZ4UKpxgOa-NeLYQJTIrSB-ol-8CUE';
+const SPREADSHEET_ID = '1uQBd97IuX5BL6uY6MWkrpECr7YXu9H5uRDjhjwkom-8';
 const SHEET_NAME = 'Time';
 const TOKEN = process.env.FETCH_API_TOKEN;
 const auth = new google.auth.GoogleAuth({
@@ -105,6 +105,8 @@ export async function getLeadToday(
   startTimestamp: number,
   endTimestamp: number,
 ): Promise<Lead[]> {
+
+
   const response: any = await fetch(
     `${apiUrl}?filter[created_at][from]=${startTimestamp}&filter[created_at][to]=${endTimestamp}`,
     {
@@ -116,3 +118,4 @@ export async function getLeadToday(
   const res = await response.json();
   return res._embedded.leads;
 }
+
