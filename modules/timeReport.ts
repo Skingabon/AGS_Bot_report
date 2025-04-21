@@ -3,49 +3,80 @@ import {
   createGoogleFields,
   domain,
   getAllPipelines,
+  getContactsByIdLead,
   getGoogleSheetData,
   getLeadToday,
+  getNotesByIdContact,
   getNotesByLead,
   updateGoogleField,
   updateLeadDateCall,
 } from '../api';
 import { getDate } from '../helper';
 
+export const processIncomingMessage = async (idLead: number) => {
+  const res = await getContactsByIdLead(idLead);
+  const contactId = res[0].to_entity_id;
+
+  const noteContact = await getNotesByIdContact(contactId);
+
+  const incomingMessages = noteContact
+    .filter((el) => !el.params.income)
+    .sort((a, b) => a.created_at - b.created_at);
+  if (!incomingMessages.length) return 'Нет исходящих писем';
+
+  const firstMessage = incomingMessages[0];
+  const date = getDate(firstMessage.created_at);
+
+  return date;
+};
+
+async function processIncomingCallOrMessage(
+  idLead: number,
+  index: number | null = null, // null, если не нужно обновлять Google Sheet
+): Promise<string | null> {
+  const notes = await getNotesByLead(idLead);
+  if (!notes || notes.length === 0) return 'Мы не ответили';
+
+  const outgoingCalls = notes
+    .filter((el) => el.note_type === 'call_out')
+    .sort((a, b) => a.created_at - b.created_at);
+
+  let date = '';
+  if (outgoingCalls.length === 0) {
+    date = await processIncomingMessage(idLead);
+  } else {
+    const firstCall = outgoingCalls[0];
+    date = getDate(firstCall.created_at);
+  }
+
+  await updateLeadDateCall(idLead, date);
+
+  if (index !== null) {
+    await updateGoogleField(date, index + 2);
+  }
+
+  return date;
+}
+
 export const updateIncomingCall = async (ctx: Context | null) => {
   if (!ctx) return;
   await ctx.reply('Начинаем проверять исходищие звонки!');
   const idsLead = (await getGoogleSheetData('A')).flat();
   const incomingData = (await getGoogleSheetData('J')).flat();
+
   for (let i = 0; i < idsLead.length; i++) {
     //TODO: Заменить если что
-    if (incomingData[i] !== 'Нет звонков') continue;
+    if (
+      incomingData[i] !== 'Нет звонков' ||
+      incomingData[i] !== 'Мы не ответили'
+    )
+      continue;
 
     const idLead = Number(idsLead[i]);
     try {
-      const note = await getNotesByLead(idLead);
-
-      if (!note) {
-        continue;
-        // throw new Error(`Сделка ${idLead} завершена `);
-      }
-      const outgoingCalls = note
-        .filter((el) => el.note_type === 'call_out')
-        .sort((a, b) => a.created_at - b.created_at);
-
-      if (outgoingCalls.length === 0) {
-        throw new Error(`Для сделки ${idLead} исходящих звонков не найдено`);
-      }
-
-      const firstCall = outgoingCalls[0]; // Берем самый первый звонок
-      const date = getDate(firstCall.created_at);
-      await Promise.all([
-        updateLeadDateCall(idLead, date),
-        updateGoogleField(date, i + 2),
-      ]);
+      await processIncomingCallOrMessage(idLead, i);
     } catch (err) {
-      if (err instanceof Error) await ctx.reply(`Ошибка: ${err.message}`);
-    } finally {
-      i++;
+      if (err instanceof Error) await console.log(`Ошибка: ${err.message}`);
     }
   }
   await ctx.reply('Готово!');
@@ -53,7 +84,7 @@ export const updateIncomingCall = async (ctx: Context | null) => {
 
 //новые поля
 function getFieldValue(fields: any[], fieldName: string): string | null {
-  const field = fields.find(f => f.field_name === fieldName);
+  const field = fields.find((f) => f.field_name === fieldName);
   return field?.values?.[0]?.value || null;
 }
 
@@ -95,38 +126,23 @@ export const createReportTimeToday = async (ctx: Context | null) => {
 
     const response = await getLeadToday(startTimestamp, endTimestamp);
     await ctx.reply('Собрал все сделки за сегодняшний день');
-    const leads = response;
 
+    const leads = response;
     if (!leads || leads.length === 0) {
       throw new Error('No leads found for the given filter.');
     }
+
     let dateIncomingCallArr: string[] = [];
+
     await ctx.reply('Беру звонки из сделки');
     for (let i = 0; i < leads.length; i++) {
       const idLead = leads[i].id;
       try {
-        const note = await getNotesByLead(idLead);
-
-        if (!note) {
-          dateIncomingCallArr.push('Нет звонков');
-          continue;
-        }
-        const outgoingCalls = note
-          .filter((el) => el.note_type === 'call_out')
-          .sort((a, b) => a.created_at - b.created_at);
-
-        if (outgoingCalls.length === 0) {
-          dateIncomingCallArr.push('Нет звонков');
-          continue;
-          // throw new Error(`Для сделки ${idLead} исходящих звонков не найдено`);
-        }
-
-        const firstCall = outgoingCalls[0]; // Берем самый первый звонок
-        const date = getDate(firstCall.created_at);
-        dateIncomingCallArr.push(date);
-        await updateLeadDateCall(idLead, date);
+        const date = await processIncomingCallOrMessage(idLead);
+        dateIncomingCallArr.push(date || '*');
       } catch (err) {
-        if (err instanceof Error) await ctx.reply(`Ошибка: ${err.message}`);
+        dateIncomingCallArr.push('-');
+        if (err instanceof Error) await console.log(`Ошибка: ${err.message}`);
       }
     }
     await ctx.reply('Закончил со звонками');
@@ -148,12 +164,16 @@ export const createReportTimeToday = async (ctx: Context | null) => {
       //новые поля
       const fields = lead.custom_fields_values || [];
 
-      const omTakenAt = formatDate(getFieldValue(fields, 'Дата/время взято в работу'));
+      const omTakenAt = formatDate(
+        getFieldValue(fields, 'Дата/время взято в работу'),
+      );
       const omTakenBy = getFieldValue(fields, 'ОМ Взято в работу') || '';
-      
-      const omAssignedAt = formatDate(getFieldValue(fields, 'Время ОМ квал серия'));
+
+      const omAssignedAt = formatDate(
+        getFieldValue(fields, 'Время ОМ квал серия'),
+      );
       const omAssignedBy = getFieldValue(fields, 'ОМ Квал серия') || '';
-//
+      //
       return [
         lead.id, // ID
         lead.name,
@@ -166,29 +186,29 @@ export const createReportTimeToday = async (ctx: Context | null) => {
         `https://${domain}.amocrm.ru/leads/detail/${lead.id}`, // Ссылка на лид
         dateIncomingCallArr[index],
         omTakenAt,
-  omTakenBy,
-  omAssignedAt,
-  omAssignedBy,
+        omTakenBy,
+        omAssignedAt,
+        omAssignedBy,
       ];
     });
     //TODO: не уверен что нужно каждый раз создавать заголовки
     const resource = {
       values: [
         [
-          'ID',
-          'Название',
-          'Цена',
-          'Статус ID',
-          'Название статуса',
-          'Название Воронки',
-          'Дата создания',
-          'Дата обновления',
-          'Ссылка на лид',
-          'Дата исходящего звонка',
-          'Дата/время "ОМ Взято в работу"',
-      'Менеджер "ОМ Взято в работу"',
-      'Дата/время "Время ОМ квал серия"',
-      'Менеджер "ОМ Квал серия"',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          new Date().toLocaleString('ru-RU'),
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
+          '',
         ],
         ...googleSheetsData,
       ],

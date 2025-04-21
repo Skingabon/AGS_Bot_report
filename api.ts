@@ -31,10 +31,10 @@ export const getNotesByLead = async (
   );
 
   if (res.status === 204) return null;
-  const data: { __embedded: { notes: noteType[] } } = await res.json();
+  const data: { _embedded: { notes: noteType[] } } = await res.json();
 
-  if (!data.__embedded) return null;
-  return data.__embedded.notes;
+  if (!data._embedded) return null;
+  return data._embedded.notes;
 };
 
 export const updateLeadDateCall = (id: number, date: string) => {
@@ -65,11 +65,15 @@ export async function getGoogleSheetData(
   return response.data.values || [];
 }
 
-export async function updateGoogleField(data: string, index: number) {
+export async function updateGoogleField(
+  data: string,
+  index: number,
+  fieldName: string = 'J',
+) {
   const sheets = google.sheets({ version: 'v4', auth });
   const res = await sheets.spreadsheets.values.update({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEET_NAME}!L${index}`,
+    range: `${SHEET_NAME}!${fieldName}${index}`,
     valueInputOption: 'RAW',
     requestBody: { values: [[data]] },
   });
@@ -107,8 +111,6 @@ export async function getLeadToday(
   startTimestamp: number,
   endTimestamp: number,
 ): Promise<Lead[]> {
-
-
   const response: any = await fetch(
     `${apiUrl}?filter[created_at][from]=${startTimestamp}&filter[created_at][to]=${endTimestamp}`,
     {
@@ -121,3 +123,81 @@ export async function getLeadToday(
   return res._embedded.leads;
 }
 
+interface IGetContactsBtIdLeadProps {
+  to_entity_id: number;
+  to_entity_type: string;
+  metadata: {
+    main_contact: boolean;
+  } | null;
+}
+
+export const getContactsByIdLead = async (
+  idLead: number,
+): Promise<IGetContactsBtIdLeadProps[]> => {
+  const res = await fetch(
+    `https://${domain}.amocrm.ru/api/v4/leads/${idLead}/links`,
+    {
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+      },
+    },
+  );
+  const data = await res.json();
+  console.log(data);
+  return data._embedded.links;
+};
+
+// interface IGetMessagesByIdContact {
+//   id: number;
+//   entity_id: number;
+//   created_by: number;
+//   updated_by: number;
+//   created_at: number;
+//   updated_at: number;
+//   responsible_user_id: number;
+//   group_id: number;
+//   note_type: string;
+//   params: {
+//     thread_id: string;
+//     message_id: string;
+//     private: boolean;
+//     income: boolean;
+//     from: {
+//       email: string;
+//       name: string;
+//     };
+//     to: {
+//       email: string;
+//       name: string;
+//     };
+//     subject: string;
+//     access_granted: number;
+//     content_summary: string;
+//     attach_cnt: number;
+//     delivery: {
+//       status: string;
+//       time: number;
+//     };
+//   };
+//   account_id: number;
+//   _links: {
+//     self: {
+//       href: string;
+//     };
+//   };
+// }
+
+export const getNotesByIdContact = async (
+  idContact: number,
+): Promise<noteType[]> => {
+  const res = await fetch(
+    `https://${domain}.amocrm.ru/api/v4/contacts/${idContact}/notes`,
+    {
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+      },
+    },
+  );
+  const data = await res.json();
+  return data._embedded.notes;
+};
