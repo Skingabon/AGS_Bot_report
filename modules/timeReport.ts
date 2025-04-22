@@ -135,8 +135,12 @@ export const createReportTimeToday = async (ctx: Context | null) => {
     endOfDay.setHours(23, 59, 59, 999);
 
     // Конвертируем в Unix timestamp (секунды)
-    const startTimestamp = Math.floor(startOfDay.getTime() / 1000);
-    const endTimestamp = Math.floor(endOfDay.getTime() / 1000);
+    // const startTimestamp = Math.floor(startOfDay.getTime() / 1000);
+    // const endTimestamp = Math.floor(endOfDay.getTime() / 1000);
+    const startDate = new Date('2025-04-03T00:00:00');
+    const endDate = new Date('2025-04-22T23:59:59');
+    const startTimestamp = Math.floor(startDate.getTime() / 1000);
+    const endTimestamp = Math.floor(endDate.getTime() / 1000);
 
     const response = await getLeadToday(startTimestamp, endTimestamp);
     console.log(response);
@@ -207,8 +211,8 @@ export const createReportTimeToday = async (ctx: Context | null) => {
       }
       const createdDate = new Date(lead.created_at * 1000);
       const takenDate = omTakenAt ? parseCustomDate(omTakenAt) : null;
-      const takeSeriesDate = omTakeIng ? parseCustomDate(omTakeIng) : null;
       const takeIngDate = omTakeIng ? parseCustomDate(omTakeIng) : null;
+      const assignedDate = omAssignedAt ? parseCustomDate(omAssignedAt) : null;
 
       let diffCreatedToTaken = '';
       if (takenDate && !isNaN(takenDate.getTime())) {
@@ -218,21 +222,6 @@ export const createReportTimeToday = async (ctx: Context | null) => {
         diffCreatedToTaken = `${diffHours} ч ${diffMinutes} мин`;
       } else {
         diffCreatedToTaken = '';
-      }
-
-      let diffTakenToTakeISeries = '';
-      if (
-        takenDate &&
-        takeSeriesDate &&
-        !isNaN(takenDate.getTime()) &&
-        !isNaN(takeSeriesDate.getTime())
-      ) {
-        const diffMs = takeSeriesDate.getTime() - takenDate.getTime();
-        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-        const diffMinutes = Math.floor((diffMs / (1000 * 60)) % 60);
-        diffTakenToTakeISeries = `${diffHours} ч ${diffMinutes} мин`;
-      } else {
-        diffTakenToTakeISeries = '';
       }
 
       let diffTakenToTakeIng = '';
@@ -248,6 +237,19 @@ export const createReportTimeToday = async (ctx: Context | null) => {
         diffTakenToTakeIng = `${diffHours} ч ${diffMinutes} мин`;
       } else {
         diffTakenToTakeIng = '';
+      }
+
+      let diffAssignedToTaken = '';
+      if (
+        takenDate &&
+        assignedDate &&
+        !isNaN(takenDate.getTime()) &&
+        !isNaN(assignedDate.getTime())
+      ) {
+        const diffMs = assignedDate.getTime() - takenDate.getTime();
+        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+        const diffMinutes = Math.floor((diffMs / (1000 * 60)) % 60);
+        diffAssignedToTaken = `${diffHours} ч ${diffMinutes} мин`;
       }
 
       return [
@@ -266,7 +268,7 @@ export const createReportTimeToday = async (ctx: Context | null) => {
         omTakenBy, //Менеджер "ОМ Взято в работу"
         omAssignedAt, //ДатаВремя "Время ОМ квал серия"
         omAssignedBy, //Менеджер "ОМ Квал серия"
-        diffTakenToTakeISeries, //На серию - Взято в работу
+        diffAssignedToTaken, //На серию - Взято в работу
         omTakeIng, //На инжиниринг
         diffTakenToTakeIng, //На инж - Взято в работу
       ];
