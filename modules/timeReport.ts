@@ -195,7 +195,61 @@ export const createReportTimeToday = async (ctx: Context | null) => {
         getFieldValue(fields, 'Дата/время КВАЛ инж'),
       );
 
-      //
+      //Вычисляю разницу во времени между датами создания и распределения на рук-отдела серии и распр на инж - распр на рук отдела серии
+      function parseCustomDate(dateStr: string): Date | null {
+        const [datePart, timePart] = dateStr.split(', ');
+        if (!datePart || !timePart) return null;
+
+        const [day, month, year] = datePart.split('.').map(Number);
+        const [hours, minutes, seconds] = timePart.split(':').map(Number);
+
+        return new Date(year, month - 1, day, hours, minutes, seconds);
+      }
+      const createdDate = new Date(lead.created_at * 1000);
+      const takenDate = omTakenAt ? parseCustomDate(omTakenAt) : null;
+      const takeSeriesDate = omTakeIng ? parseCustomDate(omTakeIng) : null;
+      const takeIngDate = omTakeIng ? parseCustomDate(omTakeIng) : null;
+
+      let diffCreatedToTaken = '';
+      if (takenDate && !isNaN(takenDate.getTime())) {
+        const diffMs = takenDate.getTime() - createdDate.getTime();
+        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+        const diffMinutes = Math.floor((diffMs / (1000 * 60)) % 60);
+        diffCreatedToTaken = `${diffHours} ч ${diffMinutes} мин`;
+      } else {
+        diffCreatedToTaken = '';
+      }
+
+      let diffTakenToTakeISeries = '';
+      if (
+        takenDate &&
+        takeSeriesDate &&
+        !isNaN(takenDate.getTime()) &&
+        !isNaN(takeSeriesDate.getTime())
+      ) {
+        const diffMs = takeSeriesDate.getTime() - takenDate.getTime();
+        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+        const diffMinutes = Math.floor((diffMs / (1000 * 60)) % 60);
+        diffTakenToTakeISeries = `${diffHours} ч ${diffMinutes} мин`;
+      } else {
+        diffTakenToTakeISeries = '';
+      }
+
+      let diffTakenToTakeIng = '';
+      if (
+        takenDate &&
+        takeIngDate &&
+        !isNaN(takenDate.getTime()) &&
+        !isNaN(takeIngDate.getTime())
+      ) {
+        const diffMs = takeIngDate.getTime() - takenDate.getTime();
+        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+        const diffMinutes = Math.floor((diffMs / (1000 * 60)) % 60);
+        diffTakenToTakeIng = `${diffHours} ч ${diffMinutes} мин`;
+      } else {
+        diffTakenToTakeIng = '';
+      }
+
       return [
         lead.id, // ID
         lead.name,
@@ -206,12 +260,15 @@ export const createReportTimeToday = async (ctx: Context | null) => {
         new Date(lead.created_at * 1000).toLocaleString(),
         new Date(lead.updated_at * 1000).toLocaleString(),
         `https://${domain}.amocrm.ru/leads/detail/${lead.id}`, // Ссылка на лид
-        dateIncomingCallArr[index],
-        omTakenAt,
-        omTakenBy,
-        omAssignedAt,
-        omAssignedBy,
-        omTakeIng,
+        dateIncomingCallArr[index], //Реакция менеджера на лид
+        omTakenAt, //ДатаВремя "ОМ Взято в работу"
+        diffCreatedToTaken, // Взято в работу - Создание
+        omTakenBy, //Менеджер "ОМ Взято в работу"
+        omAssignedAt, //ДатаВремя "Время ОМ квал серия"
+        omAssignedBy, //Менеджер "ОМ Квал серия"
+        diffTakenToTakeISeries, //На серию - Взято в работу
+        omTakeIng, //На инжиниринг
+        diffTakenToTakeIng, //На инж - Взято в работу
       ];
     });
     //TODO: не уверен что нужно каждый раз создавать заголовки
