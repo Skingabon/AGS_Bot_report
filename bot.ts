@@ -3,7 +3,6 @@ import cron from 'node-cron';
 import { Bot, Context, InlineKeyboard } from 'grammy';
 import {
   createReportTimeToday,
-  processIncomingMessage,
   updateIncomingCall,
 } from './modules/timeReport';
 
@@ -35,10 +34,10 @@ bot.callbackQuery('report-time', async (ctx) => {
   await createReportTimeToday(ctx);
 });
 
-cron.schedule('59 23 * * *', async () => {
+cron.schedule('50 23 * * *', async () => {
   console.log('Запуск ежедневного обновления...');
-  await createReportTimeToday(botContext).catch(console.error);
   await updateIncomingCall(botContext).catch(console.error);
+  await createReportTimeToday(botContext).catch(console.error);
 });
 
 bot.start();

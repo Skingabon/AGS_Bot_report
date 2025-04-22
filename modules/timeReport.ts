@@ -13,40 +13,55 @@ import {
 } from '../api';
 import { getDate } from '../helper';
 
-export const processIncomingMessage = async (idLead: number) => {
+export const incomingMessageDate = async (idLead: number) => {
   const res = await getContactsByIdLead(idLead);
   const contactId = res[0].to_entity_id;
-
   const noteContact = await getNotesByIdContact(contactId);
 
   const incomingMessages = noteContact
     .filter((el) => !el.params.income)
     .sort((a, b) => a.created_at - b.created_at);
-  if (!incomingMessages.length) return 'Нет исходящих писем';
+  if (!incomingMessages.length) return null; // Нет ни писем, ни звонков
 
   const firstMessage = incomingMessages[0];
+  if (!firstMessage) return null;
+
   const date = getDate(firstMessage.created_at);
 
   return date;
 };
 
-async function processIncomingCallOrMessage(
-  idLead: number,
-  index: number | null = null, // null, если не нужно обновлять Google Sheet
-): Promise<string | null> {
+const incomingCallDate = async (idLead: number) => {
   const notes = await getNotesByLead(idLead);
-  if (!notes || notes.length === 0) return 'Мы не ответили';
+  if (!notes || notes.length === 0) return null;
 
   const outgoingCalls = notes
     .filter((el) => el.note_type === 'call_out')
     .sort((a, b) => a.created_at - b.created_at);
 
-  let date = '';
-  if (outgoingCalls.length === 0) {
-    date = await processIncomingMessage(idLead);
-  } else {
-    const firstCall = outgoingCalls[0];
-    date = getDate(firstCall.created_at);
+  const firstCall = outgoingCalls[0];
+  if (!firstCall) return null;
+
+  const date = getDate(firstCall.created_at);
+
+  return date;
+};
+
+async function processIncomingCallOrMessage({
+  idLead,
+  index = null,
+}: {
+  idLead: number;
+  index?: number | null;
+}): Promise<string | null> {
+  let date = await incomingCallDate(idLead);
+
+  if (!date) {
+    date = await incomingMessageDate(idLead);
+  }
+
+  if (!date) {
+    date = 'Мы не ответили';
   }
 
   await updateLeadDateCall(idLead, date);
@@ -66,15 +81,14 @@ export const updateIncomingCall = async (ctx: Context | null) => {
 
   for (let i = 0; i < idsLead.length; i++) {
     //TODO: Заменить если что
-    if (
-      incomingData[i] !== 'Нет звонков' ||
-      incomingData[i] !== 'Мы не ответили'
-    )
-      continue;
+    if (incomingData[i] !== 'Мы не ответили') continue;
 
     const idLead = Number(idsLead[i]);
     try {
-      await processIncomingCallOrMessage(idLead, i);
+      await processIncomingCallOrMessage({
+        idLead: idLead,
+        index: i,
+      });
     } catch (err) {
       if (err instanceof Error) await console.log(`Ошибка: ${err.message}`);
     }
@@ -125,6 +139,7 @@ export const createReportTimeToday = async (ctx: Context | null) => {
     const endTimestamp = Math.floor(endOfDay.getTime() / 1000);
 
     const response = await getLeadToday(startTimestamp, endTimestamp);
+    console.log(response);
     await ctx.reply('Собрал все сделки за сегодняшний день');
 
     const leads = response;
@@ -134,18 +149,20 @@ export const createReportTimeToday = async (ctx: Context | null) => {
 
     let dateIncomingCallArr: string[] = [];
 
-    await ctx.reply('Беру звонки из сделки');
+    await ctx.reply('Беру звонки и сообщения из сделки');
     for (let i = 0; i < leads.length; i++) {
       const idLead = leads[i].id;
       try {
-        const date = await processIncomingCallOrMessage(idLead);
+        const date = await processIncomingCallOrMessage({
+          idLead: idLead,
+        });
         dateIncomingCallArr.push(date || '*');
       } catch (err) {
         dateIncomingCallArr.push('-');
         if (err instanceof Error) await console.log(`Ошибка: ${err.message}`);
       }
     }
-    await ctx.reply('Закончил со звонками');
+    await ctx.reply('Закончил с "первым контактом"');
     console.log(dateIncomingCallArr);
 
     // Преобразование данных для загрузки в Google Sheets
@@ -217,6 +234,10 @@ export const createReportTimeToday = async (ctx: Context | null) => {
     await createGoogleFields(resource);
     await ctx.reply('Все готово!');
   } catch (error) {
-    if (error instanceof Error) console.log('error' + error.message);
+    if (error instanceof Error) {
+      await ctx.reply('Бот остановлен. Скорее всего сделок нет');
+
+      console.log('error' + error.message);
+    }
   }
 };
