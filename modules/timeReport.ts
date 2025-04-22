@@ -190,6 +190,11 @@ export const createReportTimeToday = async (ctx: Context | null) => {
         getFieldValue(fields, 'Время ОМ квал серия'),
       );
       const omAssignedBy = getFieldValue(fields, 'ОМ Квал серия') || '';
+
+      const omTakeIng = formatDate(
+        getFieldValue(fields, 'Дата/время КВАЛ инж'),
+      );
+
       //
       return [
         lead.id, // ID
@@ -206,6 +211,7 @@ export const createReportTimeToday = async (ctx: Context | null) => {
         omTakenBy,
         omAssignedAt,
         omAssignedBy,
+        omTakeIng,
       ];
     });
     //TODO: не уверен что нужно каждый раз создавать заголовки
