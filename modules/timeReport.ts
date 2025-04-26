@@ -5,6 +5,7 @@ import {
   getAllPipelines,
   getContactsByIdLead,
   getGoogleSheetData,
+  getLeadById,
   getLeadToday,
   getNotesByIdContact,
   getNotesByLead,
@@ -73,6 +74,7 @@ async function processIncomingCallOrMessage({
   return date;
 }
 
+//Заполняю звонки за прошлые периоды если их небыло раньше
 export const updateIncomingCall = async (ctx: Context | null) => {
   if (!ctx) return;
   await ctx.reply('Начинаем проверять исходищие звонки!');
@@ -95,6 +97,58 @@ export const updateIncomingCall = async (ctx: Context | null) => {
   }
   await ctx.reply('Готово!');
 };
+//
+//Заполняю рук.отдела инжиниринга и время распределения на менеджера за прошлые периоды, если их небыло раньше
+export const updateING = async (ctx: Context | null) => {
+  if (!ctx) return;
+  await ctx.reply('Начинаем проверять данные инжиниринга');
+
+  const idsLead = (await getGoogleSheetData('A')).flat();
+  const omTakenByIngData = (await getGoogleSheetData('R')).flat();
+  const omRaspredByIngData = (await getGoogleSheetData('T')).flat();
+  const omRaspredByIngTimeData = (await getGoogleSheetData('U')).flat();
+
+  for (let i = 0; i < idsLead.length; i++) {
+    const idLead = Number(idsLead[i]);
+
+    if (
+      omTakenByIngData[i] &&
+      omRaspredByIngData[i] &&
+      omRaspredByIngTimeData[i]
+    ) {
+      continue; // Все уже заполнено
+    }
+
+    try {
+      const lead = await getLeadById(idLead); // Получаем данные сделки
+      const fields = lead.custom_fields_values || [];
+
+      const omTakenByIng = getFieldValue(fields, 'ОМ Квал инж') || '';
+      const omRaspredByIng = getFieldValue(fields, 'Распр ОМ квал ИНЖ') || '';
+      const omRaspredByIngTime = formatDate(
+        getFieldValue(fields, 'Время Распр ОМ квал ИНЖ'),
+      );
+
+      // Обновляем только если что-то новое нашли
+      if (omTakenByIng) {
+        await updateGoogleField(omTakenByIng, i + 2, 'R'); // Столбец R
+      }
+      if (omRaspredByIng) {
+        await updateGoogleField(omRaspredByIng, i + 2, 'T'); // Столбец S
+      }
+      if (omRaspredByIngTime) {
+        await updateGoogleField(omRaspredByIngTime, i + 2, 'U'); // Столбец T
+      }
+    } catch (err) {
+      if (err instanceof Error) {
+        console.log(`Ошибка при обновлении сделки ${idLead}: ${err.message}`);
+      }
+    }
+  }
+
+  await ctx.reply('Готово!');
+};
+//
 
 //новые поля
 function getFieldValue(fields: any[], fieldName: string): string | null {
@@ -137,8 +191,8 @@ export const createReportTimeToday = async (ctx: Context | null) => {
     // Конвертируем в Unix timestamp (секунды)
     // const startTimestamp = Math.floor(startOfDay.getTime() / 1000);
     // const endTimestamp = Math.floor(endOfDay.getTime() / 1000);
-    const startDate = new Date('2025-04-26T00:00:00');
-    const endDate = new Date('2025-04-26T23:59:59');
+    const startDate = new Date('2025-04-25T00:00:00');
+    const endDate = new Date('2025-04-25T23:59:59');
     const startTimestamp = Math.floor(startDate.getTime() / 1000);
     const endTimestamp = Math.floor(endDate.getTime() / 1000);
 
@@ -196,8 +250,9 @@ export const createReportTimeToday = async (ctx: Context | null) => {
       const omAssignedBy = getFieldValue(fields, 'ОМ Квал серия') || '';
       const omTakenByIng = getFieldValue(fields, 'ОМ Квал инж') || '';
       const omRaspredByIng = getFieldValue(fields, 'Распр ОМ квал ИНЖ') || '';
-      const omRaspredByIngTime =
-        getFieldValue(fields, 'Время Распр ОМ квал ИНЖ') || '';
+      const omRaspredByIngTime = formatDate(
+        getFieldValue(fields, 'Время Распр ОМ квал ИНЖ'),
+      );
       const omTakeIng = formatDate(
         getFieldValue(fields, 'Дата/время КВАЛ инж'),
       );
