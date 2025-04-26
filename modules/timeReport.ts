@@ -137,8 +137,8 @@ export const createReportTimeToday = async (ctx: Context | null) => {
     // Конвертируем в Unix timestamp (секунды)
     // const startTimestamp = Math.floor(startOfDay.getTime() / 1000);
     // const endTimestamp = Math.floor(endOfDay.getTime() / 1000);
-    const startDate = new Date('2025-04-03T00:00:00');
-    const endDate = new Date('2025-04-22T23:59:59');
+    const startDate = new Date('2025-04-26T00:00:00');
+    const endDate = new Date('2025-04-26T23:59:59');
     const startTimestamp = Math.floor(startDate.getTime() / 1000);
     const endTimestamp = Math.floor(endDate.getTime() / 1000);
 
@@ -194,7 +194,10 @@ export const createReportTimeToday = async (ctx: Context | null) => {
         getFieldValue(fields, 'Время ОМ квал серия'),
       );
       const omAssignedBy = getFieldValue(fields, 'ОМ Квал серия') || '';
-
+      const omTakenByIng = getFieldValue(fields, 'ОМ Квал инж') || '';
+      const omRaspredByIng = getFieldValue(fields, 'Распр ОМ квал ИНЖ') || '';
+      const omRaspredByIngTime =
+        getFieldValue(fields, 'Время Распр ОМ квал ИНЖ') || '';
       const omTakeIng = formatDate(
         getFieldValue(fields, 'Дата/время КВАЛ инж'),
       );
@@ -270,7 +273,10 @@ export const createReportTimeToday = async (ctx: Context | null) => {
         omAssignedBy, //Менеджер "ОМ Квал серия"
         diffAssignedToTaken, //На серию - Взято в работу
         omTakeIng, //На инжиниринг
+        omTakenByIng, //РОтдела "ОМ Квал ИНЖ"
         diffTakenToTakeIng, //На инж - Взято в работу
+        omRaspredByIng, //Распределен на менеджера "Распр ОМ квал ИНЖ"
+        omRaspredByIngTime, //Время распределения на менеджера "Время Распр ОМ квал ИНЖ"
       ];
     });
     //TODO: не уверен что нужно каждый раз создавать заголовки
