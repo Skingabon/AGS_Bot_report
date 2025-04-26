@@ -11,17 +11,6 @@ export interface Lead {
   pipeline_id: number;
   created_at: number;
   updated_at: number;
-  responsible_user_id?: number;
-  _embedded?: {
-    contacts?: Array<{
-      id: number;
-      is_main: boolean;
-    }>;
-    tags?: Array<{
-      id: number;
-      name: string;
-    }>;
-  };
   omTakenAt: number;
   omTakenBy: string;
   omAssignedAt: number;

@@ -4,7 +4,6 @@ import { Bot, Context, InlineKeyboard } from 'grammy';
 import {
   createReportTimeToday,
   updateIncomingCall,
-  updateING,
 } from './modules/timeReport';
 
 const bot = new Bot(process.env.BOT_API_KEY || '');
@@ -33,7 +32,6 @@ bot.command('start', async (ctx) => {
 
 bot.callbackQuery('generate', async (ctx) => {
   await updateIncomingCall(ctx);
-  await updateING(ctx);
 });
 
 bot.callbackQuery('report-time', async (ctx) => {
