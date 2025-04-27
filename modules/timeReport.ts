@@ -5,7 +5,6 @@ import {
   getAllPipelines,
   getContactsByIdLead,
   getGoogleSheetData,
-  getLeadById,
   getLeadToday,
   getNotesByIdContact,
   getNotesByLead,
@@ -105,9 +104,20 @@ function getFieldValue(fields: any[], fieldName: string): string | null {
   return field?.values?.[0]?.value || null;
 }
 
+//// Форматирует дату в "YYYY.MM.DD HH:MM" (например, "2025.04.22 15:30")
 function formatDate(value: string | number | null): string {
   if (!value) return '';
-  return new Date(Number(value) * 1000).toLocaleString('ru-RU');
+
+  const date = new Date(Number(value) * 1000);
+  if (isNaN(date.getTime())) return '';
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+
+  return `${year}.${month}.${day} ${hours}:${minutes}`;
 }
 //
 
@@ -140,8 +150,8 @@ export const createReportTimeToday = async (ctx: Context | null) => {
     // Конвертируем в Unix timestamp (секунды)
     // const startTimestamp = Math.floor(startOfDay.getTime() / 1000);
     // const endTimestamp = Math.floor(endOfDay.getTime() / 1000);
-    const startDate = new Date('2025-04-25T00:00:00');
-    const endDate = new Date('2025-04-25T23:59:59');
+    const startDate = new Date('2025-04-23T00:00:00');
+    const endDate = new Date('2025-04-23T23:59:59');
     const startTimestamp = Math.floor(startDate.getTime() / 1000);
     const endTimestamp = Math.floor(endDate.getTime() / 1000);
 
@@ -187,10 +197,15 @@ export const createReportTimeToday = async (ctx: Context | null) => {
 
       //новые поля
       const fields = lead.custom_fields_values || [];
+      const newLeadSourse = getFieldValue(fields, 'Источник лида') || '';
+      const newLeadTime = formatDate(
+        getFieldValue(fields, 'Дата/время новая заявка'),
+      );
+      const newLeadAdmin = getFieldValue(fields, 'ОМ Новая заявка') || '';
 
       const omTakenAt = formatDate(
         getFieldValue(fields, 'Дата/время взято в работу'),
-      );
+      ); // Форматируем сразу
       const omTakenBy = getFieldValue(fields, 'ОМ Взято в работу') || '';
 
       const omAssignedAt = formatDate(
@@ -206,29 +221,56 @@ export const createReportTimeToday = async (ctx: Context | null) => {
         getFieldValue(fields, 'Дата/время КВАЛ инж'),
       );
 
+      // Конвертирует разницу в миллисекундах в "HH:MM"
+      function formatDiff(ms: number): string {
+        if (ms <= 0) return '00:00';
+
+        const totalMinutes = Math.floor(ms / (1000 * 60));
+        const hours = Math.floor(totalMinutes / 60);
+        const minutes = totalMinutes % 60;
+
+        return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+      }
+      //
+
       //Вычисляю разницу во времени между датами создания и распределения на рук-отдела серии и распр на инж - распр на рук отдела серии
+      // Парсит дату из строки формата "YYYY.MM.DD HH:MM"
       function parseCustomDate(dateStr: string): Date | null {
-        const [datePart, timePart] = dateStr.split(', ');
+        if (!dateStr) return null;
+
+        // Разбиваем строку "2025.04.22 15:30" на части
+        const [datePart, timePart] = dateStr.split(' ');
         if (!datePart || !timePart) return null;
 
-        const [day, month, year] = datePart.split('.').map(Number);
-        const [hours, minutes, seconds] = timePart.split(':').map(Number);
+        const [year, month, day] = datePart.split('.').map(Number);
+        const [hours, minutes] = timePart.split(':').map(Number);
 
-        return new Date(year, month - 1, day, hours, minutes, seconds);
+        // Проверяем валидность данных
+        if (
+          isNaN(year) ||
+          isNaN(month) ||
+          isNaN(day) ||
+          isNaN(hours) ||
+          isNaN(minutes)
+        ) {
+          return null;
+        }
+
+        return new Date(year, month - 1, day, hours, minutes);
       }
+
       const createdDate = new Date(lead.created_at * 1000);
-      const takenDate = omTakenAt ? parseCustomDate(omTakenAt) : null;
+      const createdAtFormatted = formatDate(lead.created_at); // "2025.04.22 15:30"
+
+      const takenDate = omTakenAt ? parseCustomDate(omTakenAt) : null; // Парсим обратно, если нужно
       const takeIngDate = omTakeIng ? parseCustomDate(omTakeIng) : null;
       const assignedDate = omAssignedAt ? parseCustomDate(omAssignedAt) : null;
 
+      // Вычисляем разницу
       let diffCreatedToTaken = '';
       if (takenDate && !isNaN(takenDate.getTime())) {
         const diffMs = takenDate.getTime() - createdDate.getTime();
-        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-        const diffMinutes = Math.floor((diffMs / (1000 * 60)) % 60);
-        diffCreatedToTaken = `${diffHours} ч ${diffMinutes} мин`;
-      } else {
-        diffCreatedToTaken = '';
+        diffCreatedToTaken = formatDiff(diffMs);
       }
 
       let diffTakenToTakeIng = '';
@@ -239,9 +281,8 @@ export const createReportTimeToday = async (ctx: Context | null) => {
         !isNaN(takeIngDate.getTime())
       ) {
         const diffMs = takeIngDate.getTime() - takenDate.getTime();
-        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-        const diffMinutes = Math.floor((diffMs / (1000 * 60)) % 60);
-        diffTakenToTakeIng = `${diffHours} ч ${diffMinutes} мин`;
+
+        diffTakenToTakeIng = formatDiff(diffMs);
       } else {
         diffTakenToTakeIng = '';
       }
@@ -254,33 +295,55 @@ export const createReportTimeToday = async (ctx: Context | null) => {
         !isNaN(assignedDate.getTime())
       ) {
         const diffMs = assignedDate.getTime() - takenDate.getTime();
-        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-        const diffMinutes = Math.floor((diffMs / (1000 * 60)) % 60);
-        diffAssignedToTaken = `${diffHours} ч ${diffMinutes} мин`;
+        diffAssignedToTaken = formatDiff(diffMs);
       }
 
+      // Разница между распределением на инженера и тем, когда рук отдела взял в работу
+      let diffIngRukManeger = '';
+      const raspredIngDate = omRaspredByIngTime
+        ? parseCustomDate(omRaspredByIngTime)
+        : null;
+      const takeIngDateForDiff = omTakeIng ? parseCustomDate(omTakeIng) : null;
+
+      if (
+        raspredIngDate &&
+        takeIngDateForDiff &&
+        !isNaN(raspredIngDate.getTime()) &&
+        !isNaN(takeIngDateForDiff.getTime())
+      ) {
+        const diffMs = takeIngDateForDiff.getTime() - raspredIngDate.getTime();
+        diffIngRukManeger = formatDiff(diffMs);
+      }
+
+      // Вычисляем разницу времени первого каcания менеджера
+
       return [
-        lead.id, // ID
-        lead.name,
-        lead.price,
-        lead.status_id, // ID статуса
-        statusName, // Название статуса
-        pipelineName, // Название воронки
-        new Date(lead.created_at * 1000).toLocaleString(),
-        new Date(lead.updated_at * 1000).toLocaleString(),
-        `https://${domain}.amocrm.ru/leads/detail/${lead.id}`, // Ссылка на лид
-        dateIncomingCallArr[index], //Реакция менеджера на лид
-        omTakenAt, //ДатаВремя "ОМ Взято в работу"
-        diffCreatedToTaken, // Взято в работу - Создание
-        omTakenBy, //Менеджер "ОМ Взято в работу"
-        omAssignedAt, //ДатаВремя "Время ОМ квал серия"
-        omAssignedBy, //Менеджер "ОМ Квал серия"
-        diffAssignedToTaken, //На серию - Взято в работу
-        omTakeIng, //На инжиниринг
-        omTakenByIng, //РОтдела "ОМ Квал ИНЖ"
-        diffTakenToTakeIng, //На инж - Взято в работу
-        omRaspredByIng, //Распределен на менеджера "Распр ОМ квал ИНЖ"
-        omRaspredByIngTime, //Время распределения на менеджера "Время Распр ОМ квал ИНЖ"
+        lead.name, // 1
+        `https://${domain}.amocrm.ru/leads/detail/${lead.id}`, // 2 Ссылка на лид
+        newLeadSourse, // 3 Источник сделки
+        createdAtFormatted, // 4 Создан
+        omTakenAt, // 5 ДатаВремя "ОМ Взято в работу"
+        diffCreatedToTaken, // 6 Взято в работу - Создание ВРЕМЯ
+        omTakenBy, // 7 Менеджер "ОМ Взято в работу"
+        omAssignedAt, // 8 ДатаВремя "Время ОМ квал серия"
+        diffAssignedToTaken, // 9 На серию - Взято в работу  ВРЕМЯ
+        omAssignedBy, // 10 Менеджер "ОМ Квал серия"
+        omTakeIng, // 11 На инжиниринг
+        diffTakenToTakeIng, //12 На инж - Взято в работу
+        omTakenByIng, // 13 РОтдела "ОМ Квал ИНЖ"
+        omRaspredByIngTime, // 15 Время распределения на менеджера "Время Распр ОМ квал ИНЖ"
+        diffIngRukManeger, // Дельта распредления рук отдела на менеджера
+        omRaspredByIng, // 14 Распределен на менеджера "Распр ОМ квал ИНЖ"
+        dateIncomingCallArr[index], // 16 Реакция менеджера на лид
+        deltaTimeFirst, // 17 Дельта времени первого качания менеджера
+        // lead.price,
+        // lead.status_id, // ID статуса
+        // statusName, // Название статуса
+        // pipelineName, // Название воронки
+        // lead.id, // ID
+        // newLeadAdmin, // ответственный в сделке
+        // newLeadTime, // Время сделка Создана на этапе Новая заявка
+        // new Date(lead.updated_at * 1000).toLocaleString(),
       ];
     });
     //TODO: не уверен что нужно каждый раз создавать заголовки
@@ -293,9 +356,8 @@ export const createReportTimeToday = async (ctx: Context | null) => {
           '',
           '',
           '',
+          '',
           new Date().toLocaleString('ru-RU'),
-          '',
-          '',
           '',
           '',
           '',

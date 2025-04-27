@@ -4,7 +4,8 @@ import { Lead, noteType, Pipeline } from './interfaces';
 
 //TODO: заменить на нужное ID таблицы
 const SPREADSHEET_ID = '1uQBd97IuX5BL6uY6MWkrpECr7YXu9H5uRDjhjwkom-8';
-const SHEET_NAME = 'Time';
+// const SHEET_NAME = 'Time';
+const SHEET_NAME = 'EveryDay';
 const TOKEN = process.env.FETCH_API_TOKEN;
 const auth = new google.auth.GoogleAuth({
   keyFile: process.env.PATH_API_GOOGLE,
@@ -78,7 +79,7 @@ export async function getGoogleSheetData(
   const sheets = google.sheets({ version: 'v4', auth });
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEET_NAME}!${field}2:${field}2000`,
+    range: `${SHEET_NAME}!${field}3:${field}2000`,
   });
   return response.data.values || [];
 }
