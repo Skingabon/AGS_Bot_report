@@ -258,10 +258,15 @@ export const createReportTimeToday = async (ctx: Context | null) => {
 
         return new Date(year, month - 1, day, hours, minutes);
       }
+      // Безопасный парс даты из строки
+      function safeParseDate(str: string | null): Date | null {
+        if (!str) return null;
+        return parseCustomDate(str);
+      }
 
+      // Берем нужные даты
       const createdDate = new Date(lead.created_at * 1000);
       const createdAtFormatted = formatDate(lead.created_at); // "2025.04.22 15:30"
-
       const takenDate = omTakenAt ? parseCustomDate(omTakenAt) : null; // Парсим обратно, если нужно
       const takeIngDate = omTakeIng ? parseCustomDate(omTakeIng) : null;
       const assignedDate = omAssignedAt ? parseCustomDate(omAssignedAt) : null;
@@ -316,6 +321,25 @@ export const createReportTimeToday = async (ctx: Context | null) => {
       }
 
       // Вычисляем разницу времени первого каcания менеджера
+      let deltaTimeFirstResponse = '';
+
+      const incomingDate = safeParseDate(dateIncomingCallArr[index]);
+      const assignedAtDate = omAssignedAt
+        ? parseCustomDate(omAssignedAt)
+        : null;
+      const raspredIngAtDate = omRaspredByIngTime
+        ? parseCustomDate(omRaspredByIngTime)
+        : null;
+
+      if (incomingDate) {
+        if (omAssignedBy && assignedAtDate) {
+          const diffMs = assignedAtDate.getTime() - incomingDate.getTime();
+          deltaTimeFirstResponse = formatDiff(diffMs);
+        } else if (!omAssignedBy && raspredIngAtDate) {
+          const diffMs = raspredIngAtDate.getTime() - incomingDate.getTime();
+          deltaTimeFirstResponse = formatDiff(diffMs);
+        }
+      }
 
       return [
         lead.name, // 1
@@ -335,7 +359,7 @@ export const createReportTimeToday = async (ctx: Context | null) => {
         diffIngRukManeger, // Дельта распредления рук отдела на менеджера
         omRaspredByIng, // 14 Распределен на менеджера "Распр ОМ квал ИНЖ"
         dateIncomingCallArr[index], // 16 Реакция менеджера на лид
-        deltaTimeFirst, // 17 Дельта времени первого качания менеджера
+        deltaTimeFirstResponse, // 17 Дельта времени первого качания менеджера
         // lead.price,
         // lead.status_id, // ID статуса
         // statusName, // Название статуса
