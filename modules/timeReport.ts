@@ -204,7 +204,7 @@ export const createReportTimeToday = async (ctx: Context | null) => {
     const endTimestamp = Math.floor(endDate.getTime() / 1000);
 
     const response = await getLeadToday(startTimestamp, endTimestamp);
-    console.log(response);
+
     await ctx.reply('Собрал все сделки за сегодняшний день');
 
     const leads = response;
@@ -228,7 +228,6 @@ export const createReportTimeToday = async (ctx: Context | null) => {
       }
     }
     await ctx.reply('Закончил с "первым контактом"');
-    console.log(dateIncomingCallArr);
 
     // Преобразование данных для загрузки в Google Sheets
     const googleSheetsData = leads.map((lead, index) => {
@@ -370,7 +369,7 @@ export const createReportTimeToday = async (ctx: Context | null) => {
 
       // Вычисляем разницу времени первого каcания менеджера
       let deltaTimeFirstResponse = '';
-
+      //Получаем дату первого касания
       const incomingDate = safeParseDate(dateIncomingCallArr[index]);
       const assignedAtDate = omAssignedAt
         ? parseCustomDate(omAssignedAt)
@@ -379,13 +378,21 @@ export const createReportTimeToday = async (ctx: Context | null) => {
         ? parseCustomDate(omRaspredByIngTime)
         : null;
 
+      let timeAllWork = '-';
+      const dateSaveCreatedAt = safeParseDate(createdAtFormatted);
+
       if (incomingDate) {
         if (omAssignedBy && assignedAtDate) {
-          const diffMs = assignedAtDate.getTime() - incomingDate.getTime();
+          const diffMs = incomingDate.getTime() - assignedAtDate.getTime();
           deltaTimeFirstResponse = formatDiff(diffMs);
         } else if (!omAssignedBy && raspredIngAtDate) {
-          const diffMs = raspredIngAtDate.getTime() - incomingDate.getTime();
+          const diffMs = incomingDate.getTime() - raspredIngAtDate.getTime();
           deltaTimeFirstResponse = formatDiff(diffMs);
+        }
+        if (dateSaveCreatedAt) {
+          timeAllWork = formatDiff(
+            incomingDate.getTime() - dateSaveCreatedAt.getTime(),
+          );
         }
       }
 
@@ -408,6 +415,7 @@ export const createReportTimeToday = async (ctx: Context | null) => {
         omRaspredByIng, // 14 Распределен на менеджера "Распр ОМ квал ИНЖ"
         dateIncomingCallArr[index], // 16 Реакция менеджера на лид
         deltaTimeFirstResponse, // 17 Дельта времени первого качания менеджера
+        timeAllWork,
         // lead.price,
         // lead.status_id, // ID статуса
         // statusName, // Название статуса
