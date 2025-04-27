@@ -5,14 +5,13 @@ import {
   getAllPipelines,
   getContactsByIdLead,
   getGoogleSheetData,
-  getLeadById,
   getLeadToday,
   getNotesByIdContact,
   getNotesByLead,
   updateGoogleField,
   updateLeadDateCall,
 } from '../api';
-import { getDate } from '../helper';
+import { getDate, getPeriodTimestamps } from '../helper';
 
 export const incomingMessageDate = async (idLead: number) => {
   const res = await getContactsByIdLead(idLead);
@@ -109,7 +108,55 @@ function formatDate(value: string | number | null): string {
   if (!value) return '';
   return new Date(Number(value) * 1000).toLocaleString('ru-RU');
 }
-//
+
+export const showReportLeadByPeriod = async (
+  ctx: Context,
+  startDate: string,
+  endDate?: string,
+) => {
+  let timeDate: number[];
+
+  if (endDate) {
+    timeDate = getPeriodTimestamps(startDate, endDate);
+  } else {
+    timeDate = getPeriodTimestamps(startDate);
+  }
+  const [startTimestamp, endTimestamp] = timeDate;
+
+  const response = await getLeadToday(startTimestamp, endTimestamp);
+  const totalLeads: number = response.length;
+  let countSeries = 0;
+  let countIng = 0;
+  let countClosed = 0;
+  response.map((lead) => {
+    if (!lead.custom_fields_values) return;
+    lead.custom_fields_values.map((el) => {
+      if (el.field_id === 606679) {
+        countSeries++;
+      }
+      if (el.field_id === 606681) {
+        countIng++;
+      }
+    });
+    if (lead.status_id === 143) {
+      countClosed++;
+    }
+  });
+
+  const period = !endDate ? 'сегодня' : `период: ${startDate}-${endDate}`;
+
+  const periodOutput = `Отчет за ${period}`;
+  await ctx.reply(
+    `${periodOutput}
+Всего сделок: <b>${totalLeads}</b>
+Серия: <b>${countSeries}</b>
+Инжиниринг: <b>${countIng}</b>  
+Закрыто и нереализовано: <b>${countClosed}</b>`,
+    {
+      parse_mode: 'HTML',
+    },
+  );
+};
 
 export const createReportTimeToday = async (ctx: Context | null) => {
   if (!ctx) return;
