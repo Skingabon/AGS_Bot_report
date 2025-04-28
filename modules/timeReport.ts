@@ -136,12 +136,20 @@ export const showReportLeadByPeriod = async (
 
   const response = await getLeadToday(startTimestamp, endTimestamp);
   const totalLeads: number = response.length;
+  let countNew = 0;
+  let countWork = 0;
   let countSeries = 0;
   let countIng = 0;
   let countClosed = 0;
   response.map((lead) => {
     if (!lead.custom_fields_values) return;
     lead.custom_fields_values.map((el) => {
+      // if (el.field_id === 606675) {
+      //   countNew++;
+      // }
+      // if (el.field_id === 606677) {
+      //   countWork++;
+      // }
       if (el.field_id === 606679) {
         countSeries++;
       }
@@ -160,6 +168,7 @@ export const showReportLeadByPeriod = async (
   await ctx.reply(
     `${periodOutput}
 Всего сделок: <b>${totalLeads}</b>
+Не распределено: <b>${totalLeads - (countSeries + countIng + countClosed)}</b>
 Серия: <b>${countSeries}</b>
 Инжиниринг: <b>${countIng}</b>  
 Закрыто и нереализовано: <b>${countClosed}</b>`,
