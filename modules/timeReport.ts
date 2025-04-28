@@ -135,23 +135,32 @@ export const showReportLeadByPeriod = async (
   const [startTimestamp, endTimestamp] = timeDate;
 
   const response = await getLeadToday(startTimestamp, endTimestamp);
+  // const pipelinesResponse = await getAllPipelines();
+  // return console.log(pipelinesResponse);
   const totalLeads: number = response.length;
   let countSeries = 0;
   let countIng = 0;
   let countClosed = 0;
+  let notDistributed = 0;
   response.map((lead) => {
+    // if (lead.pipeline_id !== 5716552) return;
+    if (lead.status_id === 143) {
+      countClosed++;
+    }
+    if (lead.status_id === 50238949 || lead.status_id === 50238952) {
+      // Новая заявка или взято в работу
+      notDistributed++;
+    }
     if (!lead.custom_fields_values) return;
     lead.custom_fields_values.map((el) => {
       if (el.field_id === 606679) {
+        // Если поле серии заполнено
         countSeries++;
       }
       if (el.field_id === 606681) {
         countIng++;
       }
     });
-    if (lead.status_id === 143) {
-      countClosed++;
-    }
   });
 
   const period = !endDate ? 'сегодня' : `период: ${startDate}-${endDate}`;
@@ -160,6 +169,7 @@ export const showReportLeadByPeriod = async (
   await ctx.reply(
     `${periodOutput}
 Всего сделок: <b>${totalLeads}</b>
+Не распределено: <b>${notDistributed}</b>
 Серия: <b>${countSeries}</b>
 Инжиниринг: <b>${countIng}</b>  
 Закрыто и нереализовано: <b>${countClosed}</b>`,

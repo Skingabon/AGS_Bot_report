@@ -52,7 +52,7 @@ bot.callbackQuery('report-time', async (ctx) => {
 
 bot.callbackQuery('report-lead-today', async (ctx) => {
   const currentDate = new Date().toLocaleDateString('ru-RU');
-  await showReportLeadByPeriod(ctx, currentDate, currentDate);
+  await showReportLeadByPeriod(ctx, currentDate);
   await ctx.answerCallbackQuery();
 });
 
