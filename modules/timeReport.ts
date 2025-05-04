@@ -210,8 +210,8 @@ export const createReportTimeToday = async (ctx: Context | null) => {
     // Конвертируем в Unix timestamp (секунды)
     // const startTimestamp = Math.floor(startOfDay.getTime() / 1000);
     // const endTimestamp = Math.floor(endOfDay.getTime() / 1000);
-    const startDate = new Date('2025-04-29T00:00:00');
-    const endDate = new Date('2025-04-29T23:59:59');
+    const startDate = new Date('2025-04-27T00:00:00');
+    const endDate = new Date('2025-05-04T23:59:59');
     const startTimestamp = Math.floor(startDate.getTime() / 1000);
     const endTimestamp = Math.floor(endDate.getTime() / 1000);
 
