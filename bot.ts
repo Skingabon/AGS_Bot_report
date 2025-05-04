@@ -24,9 +24,9 @@ bot.api.setMyCommands([
 
 const menuKeyboard = new InlineKeyboard()
 
-  .text('Заполнить исходящие звонки (ручной запуск )', 'generate')
-  .row()
   .text('Создать отчет за последний день (ручной запуск)', 'report-time')
+  .row()
+  .text('Заполнить исходящие звонки (ручной запуск )', 'generate')
   .row()
   .text('Отчет по сделкам за сегодня', 'report-lead-today')
   .row()
