@@ -1,16 +1,18 @@
 import { Context } from 'grammy';
 import {
-  createGoogleFields,
   domain,
   getAllPipelines,
   getContactsByIdLead,
-  getGoogleSheetData,
   getLeadToday,
   getNotesByIdContact,
   getNotesByLead,
-  updateGoogleField,
   updateLeadDateCall,
-} from '../api';
+} from '../services/apiAmo';
+import {
+  createGoogleFields,
+  getGoogleSheetData,
+  updateGoogleField,
+} from '../services/apiGoogleTable';
 import { getDate, getPeriodTimestamps } from '../helper';
 
 export const incomingMessageDate = async (idLead: number) => {
@@ -208,8 +210,8 @@ export const createReportTimeToday = async (ctx: Context | null) => {
     // Конвертируем в Unix timestamp (секунды)
     // const startTimestamp = Math.floor(startOfDay.getTime() / 1000);
     // const endTimestamp = Math.floor(endOfDay.getTime() / 1000);
-    const startDate = new Date('2025-04-23T00:00:00');
-    const endDate = new Date('2025-04-23T23:59:59');
+    const startDate = new Date('2025-04-29T00:00:00');
+    const endDate = new Date('2025-04-29T23:59:59');
     const startTimestamp = Math.floor(startDate.getTime() / 1000);
     const endTimestamp = Math.floor(endDate.getTime() / 1000);
 
