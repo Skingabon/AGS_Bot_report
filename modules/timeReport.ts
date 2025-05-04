@@ -78,24 +78,25 @@ async function processIncomingCallOrMessage({
 //Заполняю звонки за прошлые периоды если их небыло раньше
 export const updateIncomingCall = async (ctx: Context | null) => {
   if (!ctx) return;
-  await ctx.reply('Начинаем проверять исходищие звонки!');
-  const idsLead = (await getGoogleSheetData('A')).flat();
-  const incomingData = (await getGoogleSheetData('J')).flat();
+  try {
+    await ctx.reply('Начинаем проверять исходищие звонки!');
+    const idsLead = (await getGoogleSheetData('A')).flat();
+    const incomingData = (await getGoogleSheetData('J')).flat();
 
-  for (let i = 0; i < idsLead.length; i++) {
-    //TODO: Заменить если что
-    if (incomingData[i] !== 'Мы не ответили') continue;
+    for (let i = 0; i < idsLead.length; i++) {
+      //TODO: Заменить если что
+      if (incomingData[i] !== 'Мы не ответили') continue;
 
-    const idLead = Number(idsLead[i]);
-    try {
+      const idLead = Number(idsLead[i]);
       await processIncomingCallOrMessage({
         idLead: idLead,
         index: i,
       });
-    } catch (err) {
-      if (err instanceof Error) await console.log(`Ошибка: ${err.message}`);
     }
+  } catch (err) {
+    if (err instanceof Error) await console.log(`Ошибка: ${err.message}`);
   }
+
   await ctx.reply('Готово!');
 };
 //

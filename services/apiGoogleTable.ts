@@ -1,4 +1,5 @@
 //TODO: заменить на нужное ID таблицы
+import 'dotenv/config';
 import { google } from 'googleapis';
 
 const SPREADSHEET_ID = '1uQBd97IuX5BL6uY6MWkrpECr7YXu9H5uRDjhjwkom-8';
@@ -14,7 +15,7 @@ export async function getGoogleSheetData(
   const sheets = google.sheets({ version: 'v4', auth });
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEET_NAME}!${field}3:${field}2000`,
+    range: `${SHEET_NAME}!${field}3:${field}1000`,
   });
   return response.data.values || [];
 }
