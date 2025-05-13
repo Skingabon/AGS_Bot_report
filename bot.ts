@@ -28,6 +28,8 @@ const menuKeyboard = new InlineKeyboard()
   .row()
   .text('Заполнить исходящие звонки (ручной запуск )', 'generate')
   .row()
+  .text('Отчет по сделкам за вчерашний день', 'report-lead-yesterday')
+  .row()
   .text('Отчет по сделкам за сегодня', 'report-lead-today')
   .row()
   .text('Отчет по сделкам за период', 'report-lead-period')
@@ -49,6 +51,14 @@ bot.callbackQuery('generate', async (ctx) => {
 
 bot.callbackQuery('report-time', async (ctx) => {
   await createReportTimeToday(ctx);
+});
+
+bot.callbackQuery('report-lead-yesterday', async (ctx) => {
+const yesterday = new Date();
+yesterday.setDate(yesterday.getDate() - 1);
+const yesterdayDate = yesterday.toLocaleDateString('ru-Ru');
+await showReportLeadByPeriod(ctx, yesterdayDate);
+await ctx.answerCallbackQuery();
 });
 
 bot.callbackQuery('report-lead-today', async (ctx) => {
