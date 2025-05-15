@@ -4,6 +4,7 @@ import { Bot, Context, InlineKeyboard } from 'grammy';
 import {
   createReportTimeToday,
   showReportLeadByPeriod,
+  showReportLeadByYesterday,
   updateIncomingCall,
 } from './modules/timeReport';
 
@@ -57,7 +58,7 @@ bot.callbackQuery('report-lead-yesterday', async (ctx) => {
 const yesterday = new Date();
 yesterday.setDate(yesterday.getDate() - 1);
 const yesterdayDate = yesterday.toLocaleDateString('ru-Ru');
-await showReportLeadByPeriod(ctx, yesterdayDate);
+await showReportLeadByYesterday(ctx, yesterdayDate);
 await ctx.answerCallbackQuery();
 });
 

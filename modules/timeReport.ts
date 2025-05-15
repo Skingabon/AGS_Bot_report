@@ -123,6 +123,65 @@ function formatDate(value: string | number | null): string {
   return `${year}.${month}.${day} ${hours}:${minutes}`;
 }
 
+export const showReportLeadByYesterday = async (
+  ctx: Context,
+  startDate: string,
+  endDate?: string,
+) => {
+  let timeDate: number[];
+
+  if (endDate) {
+    timeDate = getPeriodTimestamps(startDate, endDate);
+  } else {
+    timeDate = getPeriodTimestamps(startDate);
+  }
+  const [startTimestamp, endTimestamp] = timeDate;
+
+  const response = await getLeadToday(startTimestamp, endTimestamp);
+  // const pipelinesResponse = await getAllPipelines();
+  // return console.log(pipelinesResponse);
+  const totalLeads: number = response.length;
+  let countSeries = 0;
+  let countIng = 0;
+  let countClosed = 0;
+  let notDistributed = 0;
+  response.map((lead) => {
+    // if (lead.pipeline_id !== 5716552) return;
+    if (lead.status_id === 143) {
+      countClosed++;
+    }
+    if (lead.status_id === 50238949 || lead.status_id === 50238952) {
+      // Новая заявка или взято в работу
+      notDistributed++;
+    }
+    if (!lead.custom_fields_values) return;
+    lead.custom_fields_values.map((el) => {
+      if (el.field_id === 606679) {
+        // Если поле серии заполнено
+        countSeries++;
+      }
+      if (el.field_id === 606681) {
+        countIng++;
+      }
+    });
+  });
+
+  const period = !endDate ? 'вчера' : `период: ${startDate}-${endDate}`;
+
+  const periodOutput = `Отчет за ${period}`;
+  await ctx.reply(
+    `${periodOutput}
+Всего сделок: <b>${totalLeads}</b>
+Не распределено: <b>${notDistributed}</b>
+Серия: <b>${countSeries}</b>
+Инжиниринг: <b>${countIng}</b>  
+Закрыто и нереализовано: <b>${countClosed}</b>`,
+    {
+      parse_mode: 'HTML',
+    },
+  );
+};
+
 export const showReportLeadByPeriod = async (
   ctx: Context,
   startDate: string,
@@ -211,8 +270,8 @@ export const createReportTimeToday = async (ctx: Context | null) => {
     // Конвертируем в Unix timestamp (секунды)
     // const startTimestamp = Math.floor(startOfDay.getTime() / 1000);
     // const endTimestamp = Math.floor(endOfDay.getTime() / 1000);
-    const startDate = new Date('2025-05-08T00:00:00');
-    const endDate = new Date('2025-05-11T23:59:59');
+    const startDate = new Date('2025-05-01T00:00:00');
+    const endDate = new Date('2025-05-12T23:59:59');
     const startTimestamp = Math.floor(startDate.getTime() / 1000);
     const endTimestamp = Math.floor(endDate.getTime() / 1000);
 
