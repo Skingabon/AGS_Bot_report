@@ -3,6 +3,7 @@ import {
   domain,
   getAllPipelines,
   getContactsByIdLead,
+  getLeadById,
   getLeadToday,
   getNotesByIdContact,
   getNotesByLead,
@@ -13,7 +14,13 @@ import {
   getGoogleSheetData,
   updateGoogleField,
 } from '../services/apiGoogleTable';
-import { getDate, getPeriodTimestamps } from '../helper';
+import {
+  formatDiff,
+  getDate,
+  getPeriodTimestamps,
+  parseCustomDate,
+  safeParseDate,
+} from '../helper';
 
 export const incomingMessageDate = async (idLead: number) => {
   const res = await getContactsByIdLead(idLead);
@@ -28,7 +35,7 @@ export const incomingMessageDate = async (idLead: number) => {
   const firstMessage = incomingMessages[0];
   if (!firstMessage) return null;
 
-  const date = getDate(firstMessage.created_at);
+  const date = firstMessage.created_at;
 
   return date;
 };
@@ -44,18 +51,16 @@ const incomingCallDate = async (idLead: number) => {
   const firstCall = outgoingCalls[0];
   if (!firstCall) return null;
 
-  const date = getDate(firstCall.created_at);
+  const date = firstCall.created_at;
 
   return date;
 };
 
-async function processIncomingCallOrMessage({
+async function getCreatedAtIncomingCallOrMessage({
   idLead,
-  index = null,
 }: {
   idLead: number;
-  index?: number | null;
-}): Promise<string | null> {
+}): Promise<number | null> {
   let date = await incomingCallDate(idLead);
 
   if (!date) {
@@ -63,16 +68,20 @@ async function processIncomingCallOrMessage({
   }
 
   if (!date) {
-    date = 'Мы не ответили';
-  }
-
-  await updateLeadDateCall(idLead, date);
-
-  if (index !== null) {
-    await updateGoogleField(date, index + 2);
+    date = 0;
   }
 
   return date;
+}
+
+function isInvalidDateIncoming({
+  createAtLead,
+  createAtIncoming,
+}: {
+  createAtLead: number;
+  createAtIncoming: number;
+}): boolean {
+  return createAtLead > createAtIncoming;
 }
 
 //Заполняю звонки за прошлые периоды если их небыло раньше
@@ -84,17 +93,86 @@ export const updateIncomingCall = async (ctx: Context | null) => {
     const incomingData = (await getGoogleSheetData('T')).flat();
 
     for (let i = 0; i < idsLead.length; i++) {
-      //TODO: Заменить если что
-      if (incomingData[i] !== 'Мы не ответили') continue;
+      try {
+        //TODO: Заменить если что
+        if (incomingData[i] === 'Мы не ответили') continue;
 
-      const idLead = Number(idsLead[i]);
-      await processIncomingCallOrMessage({
-        idLead: idLead,
-        index: i,
-      });
+        const idLead = Number(idsLead[i]);
+        const lead = await getLeadById(idLead);
+        const date = await getCreatedAtIncomingCallOrMessage({
+          idLead,
+        });
+
+        if (!date) {
+          await updateLeadDateCall(idLead, 'Мы не ответили');
+          await updateGoogleField('Мы не ответили', i + 2);
+          continue;
+        }
+
+        if (
+          isInvalidDateIncoming({
+            createAtLead: lead.created_at,
+            createAtIncoming: date,
+          })
+        ) {
+          await updateLeadDateCall(idLead, 'Мы не ответили');
+          await updateGoogleField('Мы не ответили', i + 2);
+
+          continue;
+        }
+        const fields = lead.custom_fields_values || [];
+        let timeAllWork = '-';
+        const createdAtFormatted = formatDate(lead.created_at);
+        const dateSaveCreatedAt = safeParseDate(createdAtFormatted);
+        const incomingDate = safeParseDate(getDate(date));
+
+        if (incomingDate) {
+          if (dateSaveCreatedAt) {
+            timeAllWork = formatDiff(
+              incomingDate.getTime() - dateSaveCreatedAt.getTime(),
+            );
+          }
+        }
+
+        let deltaTimeFirstResponse = '';
+        const omAssignedAt = formatDate(
+          getFieldValue(fields, 'Время ОМ квал серия'),
+        );
+        const omRaspredByIngTime = formatDate(
+          getFieldValue(fields, 'Время Распр ОМ квал ИНЖ'),
+        );
+        //Получаем дату первого касания
+        const assignedAtDate = omAssignedAt
+          ? parseCustomDate(omAssignedAt)
+          : null;
+        const raspredIngAtDate = omRaspredByIngTime
+          ? parseCustomDate(omRaspredByIngTime)
+          : null;
+        const omAssignedBy = getFieldValue(fields, 'ОМ Квал серия') || '';
+
+        if (incomingDate) {
+          if (omAssignedBy && assignedAtDate) {
+            const diffMs = incomingDate.getTime() - assignedAtDate.getTime();
+            deltaTimeFirstResponse = formatDiff(diffMs);
+          } else if (!omAssignedBy && raspredIngAtDate) {
+            const diffMs = incomingDate.getTime() - raspredIngAtDate.getTime();
+            deltaTimeFirstResponse = formatDiff(diffMs);
+          }
+        }
+
+        const promises = Promise.all([
+          updateLeadDateCall(idLead, getDate(date)),
+          updateGoogleField(getDate(date), i + 2),
+          updateGoogleField(timeAllWork, i + 2, 'V'),
+          updateGoogleField(deltaTimeFirstResponse, i + 2, 'U'),
+        ]);
+        await promises;
+      } catch (err) {
+        if (err instanceof Error) console.log(`Ошибка: ${err.message}`);
+      }
     }
   } catch (err) {
-    if (err instanceof Error) await console.log(`Ошибка: ${err.message}`);
+    if (err instanceof Error) console.log(`Ошибка: ${err.message}`);
   }
 
   await ctx.reply('Готово!');
@@ -138,15 +216,12 @@ export const showReportLeadByYesterday = async (
   const [startTimestamp, endTimestamp] = timeDate;
 
   const response = await getLeadToday(startTimestamp, endTimestamp);
-  // const pipelinesResponse = await getAllPipelines();
-  // return console.log(pipelinesResponse);
   const totalLeads: number = response.length;
   let countSeries = 0;
   let countIng = 0;
   let countClosed = 0;
   let notDistributed = 0;
   response.map((lead) => {
-    // if (lead.pipeline_id !== 5716552) return;
     if (lead.status_id === 143) {
       countClosed++;
     }
@@ -197,8 +272,6 @@ export const showReportLeadByPeriod = async (
   const [startTimestamp, endTimestamp] = timeDate;
 
   const response = await getLeadToday(startTimestamp, endTimestamp);
-  // const pipelinesResponse = await getAllPipelines();
-  // return console.log(pipelinesResponse);
   const totalLeads: number = response.length;
   let countSeries = 0;
   let countIng = 0;
@@ -268,9 +341,9 @@ export const createReportTimeToday = async (ctx: Context | null) => {
     endOfDay.setHours(23, 59, 59, 999);
 
     // Конвертируем в Unix timestamp (секунды)
-    // const startTimestamp = Math.floor(startOfDay.getTime() / 1000);
+    // const startTimestamp = Math.floor(startOfDay.getTime() / 1000); //TODO Для прода
     // const endTimestamp = Math.floor(endOfDay.getTime() / 1000);
-    const startDate = new Date('2025-05-01T00:00:00');
+    const startDate = new Date('2025-05-14T00:00:00');
     const endDate = new Date('2025-05-17T23:59:59');
     const startTimestamp = Math.floor(startDate.getTime() / 1000);
     const endTimestamp = Math.floor(endDate.getTime() / 1000);
@@ -284,23 +357,40 @@ export const createReportTimeToday = async (ctx: Context | null) => {
       throw new Error('No leads found for the given filter.');
     }
 
-    let dateIncomingCallArr: string[] = [];
+    // let dateIncomingCallArr: string[] = [];
 
     await ctx.reply('Беру звонки и сообщения из сделки');
-    for (let i = 0; i < leads.length; i++) {
-      const idLead = leads[i].id;
-      try {
-        const date = await processIncomingCallOrMessage({
-          idLead: idLead,
-        });
-        dateIncomingCallArr.push(date || '*');
-      } catch (err) {
-        dateIncomingCallArr.push('-');
-        if (err instanceof Error) await console.log(`Ошибка: ${err.message}`);
-      }
-    }
+    // for (let i = 0; i < leads.length; i++) {
+    //   const idLead = leads[i].id;
+    //   const leadCreateDate = leads[i].created_at;
+    //   try {
+    //     //TODO иногда выдает дату звонка, которого не было
+    //     const date = await getCreatedAtIncomingCallOrMessage({
+    //       idLead: idLead,
+    //     });
+    //     if (!date) {
+    //       dateIncomingCallArr.push('*');
+    //       await updateLeadDateCall(idLead, 'Мы не ответили');
+    //       continue;
+    //     }
+    //     if (
+    //       isInvalidDateIncoming({
+    //         createAtLead: leadCreateDate,
+    //         createAtIncoming: date,
+    //       })
+    //     ) {
+    //       await updateLeadDateCall(idLead, 'Мы не ответили');
+    //       dateIncomingCallArr.push('Мы не ответили');
+    //       continue;
+    //     }
+    //     await updateLeadDateCall(idLead, getDate(date));
+    //     dateIncomingCallArr.push(getDate(date));
+    //   } catch (err) {
+    //     dateIncomingCallArr.push('-');
+    //     if (err instanceof Error) console.log(`Ошибка: ${err.message}`);
+    //   }
+    // }
     await ctx.reply('Закончил с "первым контактом"');
-
     // Преобразование данных для загрузки в Google Sheets
     const googleSheetsData = leads.map((lead, index) => {
       // Получаем название воронки по ID
@@ -324,10 +414,10 @@ export const createReportTimeToday = async (ctx: Context | null) => {
       //новые поля
       const fields = lead.custom_fields_values || [];
       const newLeadSourse = getFieldValue(fields, 'Источник лида') || '';
-      const newLeadTime = formatDate(
-        getFieldValue(fields, 'Дата/время новая заявка'),
-      );
-      const newLeadAdmin = getFieldValue(fields, 'ОМ Новая заявка') || '';
+      // const newLeadTime = formatDate(
+      //   getFieldValue(fields, 'Дата/время новая заявка'),
+      // );
+      // const newLeadAdmin = getFieldValue(fields, 'ОМ Новая заявка') || '';
 
       const omTakenAt = formatDate(
         getFieldValue(fields, 'Дата/время взято в работу'),
@@ -346,49 +436,6 @@ export const createReportTimeToday = async (ctx: Context | null) => {
       const omTakeIng = formatDate(
         getFieldValue(fields, 'Дата/время КВАЛ инж'),
       );
-
-      // Конвертирует разницу в миллисекундах в "HH:MM"
-      function formatDiff(ms: number): string {
-        if (ms <= 0) return '00:00';
-
-        const totalMinutes = Math.floor(ms / (1000 * 60));
-        const hours = Math.floor(totalMinutes / 60);
-        const minutes = totalMinutes % 60;
-
-        return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-      }
-      //
-
-      //Вычисляю разницу во времени между датами создания и распределения на рук-отдела серии и распр на инж - распр на рук отдела серии
-      // Парсит дату из строки формата "YYYY.MM.DD HH:MM"
-      function parseCustomDate(dateStr: string): Date | null {
-        if (!dateStr) return null;
-
-        // Разбиваем строку "2025.04.22 15:30" на части
-        const [datePart, timePart] = dateStr.split(' ');
-        if (!datePart || !timePart) return null;
-
-        const [year, month, day] = datePart.split('.').map(Number);
-        const [hours, minutes] = timePart.split(':').map(Number);
-
-        // Проверяем валидность данных
-        if (
-          isNaN(year) ||
-          isNaN(month) ||
-          isNaN(day) ||
-          isNaN(hours) ||
-          isNaN(minutes)
-        ) {
-          return null;
-        }
-
-        return new Date(year, month - 1, day, hours, minutes);
-      }
-      // Безопасный парс даты из строки
-      function safeParseDate(str: string | null): Date | null {
-        if (!str) return null;
-        return parseCustomDate(str);
-      }
 
       // Берем нужные даты
       const createdDate = new Date(lead.created_at * 1000);
@@ -447,33 +494,33 @@ export const createReportTimeToday = async (ctx: Context | null) => {
       }
 
       // Вычисляем разницу времени первого каcания менеджера
-      let deltaTimeFirstResponse = '';
-      //Получаем дату первого касания
-      const incomingDate = safeParseDate(dateIncomingCallArr[index]);
-      const assignedAtDate = omAssignedAt
-        ? parseCustomDate(omAssignedAt)
-        : null;
-      const raspredIngAtDate = omRaspredByIngTime
-        ? parseCustomDate(omRaspredByIngTime)
-        : null;
+      // let deltaTimeFirstResponse = '';
+      // //Получаем дату первого касания
+      // const incomingDate = safeParseDate(dateIncomingCallArr[index]);
+      // const assignedAtDate = omAssignedAt
+      //   ? parseCustomDate(omAssignedAt)
+      //   : null;
+      // const raspredIngAtDate = omRaspredByIngTime
+      //   ? parseCustomDate(omRaspredByIngTime)
+      //   : null;
 
-      let timeAllWork = '-';
-      const dateSaveCreatedAt = safeParseDate(createdAtFormatted);
+      // let timeAllWork = '-';
+      // const dateSaveCreatedAt = safeParseDate(createdAtFormatted);
 
-      if (incomingDate) {
-        if (omAssignedBy && assignedAtDate) {
-          const diffMs = incomingDate.getTime() - assignedAtDate.getTime();
-          deltaTimeFirstResponse = formatDiff(diffMs);
-        } else if (!omAssignedBy && raspredIngAtDate) {
-          const diffMs = incomingDate.getTime() - raspredIngAtDate.getTime();
-          deltaTimeFirstResponse = formatDiff(diffMs);
-        }
-        if (dateSaveCreatedAt) {
-          timeAllWork = formatDiff(
-            incomingDate.getTime() - dateSaveCreatedAt.getTime(),
-          );
-        }
-      }
+      // if (incomingDate) {
+      //   if (omAssignedBy && assignedAtDate) {
+      //     const diffMs = incomingDate.getTime() - assignedAtDate.getTime();
+      //     deltaTimeFirstResponse = formatDiff(diffMs);
+      //   } else if (!omAssignedBy && raspredIngAtDate) {
+      //     const diffMs = incomingDate.getTime() - raspredIngAtDate.getTime();
+      //     deltaTimeFirstResponse = formatDiff(diffMs);
+      //   }
+      //   // if (dateSaveCreatedAt) {
+      //   //   timeAllWork = formatDiff(
+      //   //     incomingDate.getTime() - dateSaveCreatedAt.getTime(),
+      //   //   );
+      //   // }
+      // }
 
       const date = new Date(lead.updated_at * 1000);
       const formattedUpdatedAt = `${date.toLocaleDateString('ru-RU')} ${date.toLocaleTimeString('ru-RU')}`;
@@ -500,9 +547,12 @@ export const createReportTimeToday = async (ctx: Context | null) => {
         omRaspredByIngTime, // 17 Q Время распределения на менеджера инжиниринга "Время Распр ОМ квал ИНЖ"
         diffIngRukManeger, // 18 R  Дельта распредления Кто распределил на менеджера
         omRaspredByIng, // 14 S Менеджер отдела инжиниринга. Распределен на менеджера "Распр ОМ квал ИНЖ"
-        dateIncomingCallArr[index], // 16 T Первое касание. Реакция менеджера на лид Первое касание
-        deltaTimeFirstResponse, // 17 U Дельта от распределения на серию или инжтиниринг до первого касания менеджера - звонок или письмо или отввет в мессенджере.
-        timeAllWork, // 18 V  Общее время сделки в работе от даты/время создания до даты последнего действия W
+        '-', // Первое касание
+        // dateIncomingCallArr[index], // 16 T Первое касание. Реакция менеджера на лид Первое касание
+        '-', //deltaTimeFirstResponse
+        // deltaTimeFirstResponse, // 17 U Дельта от распределения на серию или инжтиниринг до первого касания менеджера - звонок или письмо или отввет в мессенджере.
+        '-', // timeAllWork
+        // timeAllWork, // 18 V  Общее время сделки в работе от даты/время создания до даты последнего действия W
         formattedUpdatedAt, // 19 W Дата/время последнего обновления в сделке
         // lead.price,
         // lead.status_id, // ID статуса
@@ -514,9 +564,9 @@ export const createReportTimeToday = async (ctx: Context | null) => {
         // new Date(lead.updated_at * 1000).toLocaleString(),
       ];
     });
-    //TODO: не уверен что нужно каждый раз создавать заголовки
+
     const resource = {
-      values: [...googleSheetsData],
+      values: googleSheetsData,
     };
     await ctx.reply('Добавляю в таблицу');
     await createGoogleFields(resource);

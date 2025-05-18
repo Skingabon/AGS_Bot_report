@@ -56,6 +56,7 @@ bot.callbackQuery('generate', async (ctx) => {
 
 bot.callbackQuery('report-time', async (ctx) => {
   await createReportTimeToday(ctx);
+  await updateIncomingCall(ctx);
 });
 
 bot.callbackQuery('send-google-link', async (ctx) => {
@@ -138,8 +139,8 @@ bot.on('message:text', async (ctx) => {
 //Ежедневное заполнение отчета в 23.50
 cron.schedule('50 23 * * *', async () => {
   console.log('Запуск ежедневного обновления...');
-  await updateIncomingCall(botContext).catch(console.error);
   await createReportTimeToday(botContext).catch(console.error);
+  await updateIncomingCall(botContext).catch(console.error);
 });
 
 //Ежедневная отправка ссылки неа отчет в 9.00

@@ -3,6 +3,7 @@ import 'dotenv/config';
 import { google } from 'googleapis';
 
 const SPREADSHEET_ID = '1uQBd97IuX5BL6uY6MWkrpECr7YXu9H5uRDjhjwkom-8';
+// const SPREADSHEET_ID = '16Gr85TxzbdzXNaZ4UKpxgOa-NeLYQJTIrSB-ol-8CUE'; // TODO для теста
 const SHEET_NAME = 'Time';
 const auth = new google.auth.GoogleAuth({
   keyFile: process.env.PATH_API_GOOGLE,
@@ -37,7 +38,7 @@ export async function getGoogleSheetData(
 
   // Вычисляем последнюю строку с данными
   const lastRow = values.length + 1; // +1, так как данные начинаются со 2-й строки
-  console.log(lastRow);
+  // console.log(lastRow);
   // Теперь запрашиваем только нужный диапазон
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,

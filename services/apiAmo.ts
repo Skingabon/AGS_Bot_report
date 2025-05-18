@@ -90,6 +90,16 @@ export async function getLeadToday(
   return res._embedded.leads;
 }
 
+export async function getLeadById(id: number): Promise<Lead> {
+  const response: any = await fetch(`${apiUrl}/${id}`, {
+    headers: {
+      Authorization: `Bearer ${TOKEN}`,
+    },
+  });
+  const res = await response.json();
+  return res;
+}
+
 interface IGetContactsBtIdLeadProps {
   to_entity_id: number;
   to_entity_type: string;
