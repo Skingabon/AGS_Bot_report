@@ -81,7 +81,7 @@ export const updateIncomingCall = async (ctx: Context | null) => {
   try {
     await ctx.reply('Начинаем проверять исходищие звонки!');
     const idsLead = (await getGoogleSheetData('A')).flat();
-    const incomingData = (await getGoogleSheetData('J')).flat();
+    const incomingData = (await getGoogleSheetData('T')).flat();
 
     for (let i = 0; i < idsLead.length; i++) {
       //TODO: Заменить если что
@@ -271,7 +271,7 @@ export const createReportTimeToday = async (ctx: Context | null) => {
     // const startTimestamp = Math.floor(startOfDay.getTime() / 1000);
     // const endTimestamp = Math.floor(endOfDay.getTime() / 1000);
     const startDate = new Date('2025-05-01T00:00:00');
-    const endDate = new Date('2025-05-12T23:59:59');
+    const endDate = new Date('2025-05-17T23:59:59');
     const startTimestamp = Math.floor(startDate.getTime() / 1000);
     const endTimestamp = Math.floor(endDate.getTime() / 1000);
 
@@ -307,11 +307,18 @@ export const createReportTimeToday = async (ctx: Context | null) => {
       const pipelineName = pipelinesMap[lead.pipeline_id] || 'Не найдено';
 
       // Добавляем название статуса в зависимости от ID статуса
+      //Заменить на switch case
       let statusName = '';
       if (lead.status_id === 142) {
         statusName = 'Успешно реализовано';
       } else if (lead.status_id === 143) {
         statusName = 'Закрыто и не реализовано';
+      }
+      if (lead.status_id === 18913120) {
+        statusName = 'Отдел серийного об-я';
+      }
+      if (lead.status_id === 73470054) {
+        statusName = 'Отдел инжиниринга ';
       }
 
       //новые поля
@@ -469,9 +476,12 @@ export const createReportTimeToday = async (ctx: Context | null) => {
       }
 
       return [
+        lead.id, // ID
         lead.name, // 1
         `https://${domain}.amocrm.ru/leads/detail/${lead.id}`, // 2 Ссылка на лид
         newLeadSourse, // 3 Источник сделки
+        statusName, // Название статуса
+        pipelineName, // Название воронки
         createdAtFormatted, // 4 Создан
         omTakenAt, // 5 ДатаВремя "ОМ Взято в работу"
         diffCreatedToTaken, // 6 Взято в работу - Создание ВРЕМЯ
@@ -500,24 +510,7 @@ export const createReportTimeToday = async (ctx: Context | null) => {
     });
     //TODO: не уверен что нужно каждый раз создавать заголовки
     const resource = {
-      values: [
-        [
-          '',
-          '',
-          '',
-          '',
-          '',
-          '',
-          '',
-          new Date().toLocaleString('ru-RU'),
-          '',
-          '',
-          '',
-          '',
-          '',
-        ],
-        ...googleSheetsData,
-      ],
+      values: [...googleSheetsData],
     };
     await ctx.reply('Добавляю в таблицу');
     await createGoogleFields(resource);
