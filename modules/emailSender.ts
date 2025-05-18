@@ -12,7 +12,7 @@ export async function sendGoogleSheetLinkByEmail(to: string, sheetUrl: string) {
   await transporter.sendMail({
     from: process.env.SMTP_USER,
     to,
-    subject: 'Ссылка на Google Таблицу',
-    html: `<p>Вот ссылка на нужную таблицу: <a href="${sheetUrl}">${sheetUrl}</a></p>`,
+    subject: 'Отчет по работе с лидами',
+    html: `<p>Здравствуйте. Отчет о работе с лидами по ссылке: <a href="${sheetUrl}">${sheetUrl}</a></p>`,
   });
 }

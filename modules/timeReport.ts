@@ -475,29 +475,35 @@ export const createReportTimeToday = async (ctx: Context | null) => {
         }
       }
 
+      const date = new Date(lead.updated_at * 1000);
+      const formattedUpdatedAt = `${date.toLocaleDateString('ru-RU')} ${date.toLocaleTimeString('ru-RU')}`;
+      // Сортирую по возрастанию даты создания
+      leads.sort((a, b) => a.created_at - b.created_at);
+
       return [
-        lead.id, // ID
-        lead.name, // 1
-        `https://${domain}.amocrm.ru/leads/detail/${lead.id}`, // 2 Ссылка на лид
-        newLeadSourse, // 3 Источник сделки
-        statusName, // Название статуса
-        pipelineName, // Название воронки
-        createdAtFormatted, // 4 Создан
-        omTakenAt, // 5 ДатаВремя "ОМ Взято в работу"
-        diffCreatedToTaken, // 6 Взято в работу - Создание ВРЕМЯ
-        omTakenBy, // 7 Менеджер "ОМ Взято в работу"
-        omAssignedAt, // 8 ДатаВремя "Время ОМ квал серия"
-        diffAssignedToTaken, // 9 На серию - Взято в работу  ВРЕМЯ
-        omAssignedBy, // 10 Менеджер "ОМ Квал серия"
-        omTakeIng, // 11 На инжиниринг
-        diffTakenToTakeIng, //12 На инж - Взято в работу
-        omTakenByIng, // 13 РОтдела "ОМ Квал ИНЖ"
-        omRaspredByIngTime, // 15 Время распределения на менеджера "Время Распр ОМ квал ИНЖ"
-        diffIngRukManeger, // Дельта распредления рук отдела на менеджера
-        omRaspredByIng, // 14 Распределен на менеджера "Распр ОМ квал ИНЖ"
-        dateIncomingCallArr[index], // 16 Реакция менеджера на лид
-        deltaTimeFirstResponse, // 17 Дельта времени первого качания менеджера
-        timeAllWork,
+        lead.id, // 1 A ID
+        lead.name, // 2 B
+        `https://${domain}.amocrm.ru/leads/detail/${lead.id}`, // 3 C Ссылка на лид
+        newLeadSourse, // 4 D Источник сделки
+        statusName, // 5 E Название статуса
+        pipelineName, // 6 F Название воронки
+        createdAtFormatted, // 7 G Создан
+        omTakenAt, // 8 H ДатаВремя "ОМ Взято в работу"
+        diffCreatedToTaken, // 9 I Дельта Взято в работу - Создание ВРЕМЯ
+        omTakenBy, // 10 J Рук отдела Менеджер "ОМ Взято в работу"
+        omAssignedAt, //11 K На серию. ДатаВремя "Время ОМ квал серия"
+        diffAssignedToTaken, // 12 L Дельта На серию - Взято в работу  ВРЕМЯ
+        omAssignedBy, // 13 M Менеджер Серии "ОМ Квал серия"
+        omTakeIng, // 14 N Распределен на инжиниринг
+        diffTakenToTakeIng, //15 O На инж - Взято в работу
+        omTakenByIng, // 16 Р Кто распределил наинжиниринг "ОМ Квал ИНЖ"
+        omRaspredByIngTime, // 17 Q Время распределения на менеджера инжиниринга "Время Распр ОМ квал ИНЖ"
+        diffIngRukManeger, // 18 R  Дельта распредления Кто распределил на менеджера
+        omRaspredByIng, // 14 S Менеджер отдела инжиниринга. Распределен на менеджера "Распр ОМ квал ИНЖ"
+        dateIncomingCallArr[index], // 16 T Первое касание. Реакция менеджера на лид Первое касание
+        deltaTimeFirstResponse, // 17 U Дельта от распределения на серию или инжтиниринг до первого касания менеджера - звонок или письмо или отввет в мессенджере.
+        timeAllWork, // 18 V  Общее время сделки в работе от даты/время создания до даты последнего действия W
+        formattedUpdatedAt, // 19 W Дата/время последнего обновления в сделке
         // lead.price,
         // lead.status_id, // ID статуса
         // statusName, // Название статуса

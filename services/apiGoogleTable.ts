@@ -9,15 +9,41 @@ const auth = new google.auth.GoogleAuth({
   scopes: ['https://www.googleapis.com/auth/spreadsheets'],
 });
 
+// export async function getGoogleSheetData(
+//   field: string = 'B',
+// ): Promise<Array<string[]>> {
+//   const sheets = google.sheets({ version: 'v4', auth });
+//   const response = await sheets.spreadsheets.values.get({
+//     spreadsheetId: SPREADSHEET_ID,
+//     //TODO найти номер последней строки с данными
+//     range: `${SHEET_NAME}!${field}2:${field}1000`,
+//   });
+//   return response.data.values || [];
+// }
+
+//Ищу последнюю строку с данными и формирую диапазон для заполнения
 export async function getGoogleSheetData(
-  field: string = 'B',
+  field: string = 'A',
 ): Promise<Array<string[]>> {
   const sheets = google.sheets({ version: 'v4', auth });
+
+  // Сначала получаем все строки в выбранном столбце, начиная со второй
+  const columnResponse = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${SHEET_NAME}!${field}2:${field}`,
+  });
+
+  const values = columnResponse.data.values || [];
+
+  // Вычисляем последнюю строку с данными
+  const lastRow = values.length + 1; // +1, так как данные начинаются со 2-й строки
+  console.log(lastRow);
+  // Теперь запрашиваем только нужный диапазон
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    //TODO найти номер последней строки с данными
-    range: `${SHEET_NAME}!${field}2:${field}1000`,
+    range: `${SHEET_NAME}!${field}2:${field}${lastRow}`,
   });
+
   return response.data.values || [];
 }
 
