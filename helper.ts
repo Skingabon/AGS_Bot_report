@@ -13,6 +13,8 @@
 // };
 //
 
+import { CustomFields } from './interfaces';
+
 export const getDate = (time: number): string => {
   const date = new Date(time * 1000);
 
@@ -107,4 +109,33 @@ export function formatDiff(ms: number): string {
   const minutes = totalMinutes % 60;
 
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
+
+export function getCurrentTime() {
+  return `${new Date().getHours()}:${new Date().getMinutes()}`;
+}
+
+//новые поля
+export function getFieldValue(
+  fields: CustomFields[],
+  fieldName: string,
+): string | null {
+  const field = fields.find((f) => f.field_name === fieldName);
+  return field?.values?.[0]?.value || null;
+}
+
+//// Форматирует дату в "YYYY.MM.DD HH:MM" (например, "2025.04.22 15:30")
+export function formatDate(value: string | number | null): string {
+  if (!value) return '';
+
+  const date = new Date(Number(value) * 1000);
+  if (isNaN(date.getTime())) return '';
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+
+  return `${year}.${month}.${day} ${hours}:${minutes}`;
 }

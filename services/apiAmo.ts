@@ -65,7 +65,7 @@ export const updateLeadDateCall = (id: number, date: string) => {
 };
 
 export async function getAllPipelines(): Promise<Pipeline[]> {
-  const response: any = await fetch(pipelinesUrl, {
+  const response = await fetch(pipelinesUrl, {
     headers: {
       Authorization: `Bearer ${TOKEN}`,
     },
@@ -78,7 +78,7 @@ export async function getLeadToday(
   startTimestamp: number,
   endTimestamp: number,
 ): Promise<Lead[]> {
-  const response: any = await fetch(
+  const response = await fetch(
     `${apiUrl}?filter[created_at][from]=${startTimestamp}&filter[created_at][to]=${endTimestamp}`,
     {
       headers: {
@@ -91,7 +91,7 @@ export async function getLeadToday(
 }
 
 export async function getLeadById(id: number): Promise<Lead> {
-  const response: any = await fetch(`${apiUrl}/${id}`, {
+  const response = await fetch(`${apiUrl}/${id}`, {
     headers: {
       Authorization: `Bearer ${TOKEN}`,
     },

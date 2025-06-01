@@ -15,7 +15,13 @@ export interface Lead {
   omTakenBy: string;
   omAssignedAt: number;
   omAssignedBy: string;
-  custom_fields_values?: any[];
+  custom_fields_values?: CustomFields[];
+}
+
+export interface CustomFields {
+  field_name: string;
+  values: { value: string }[];
+  field_id: number;
 }
 
 export type noteType = {

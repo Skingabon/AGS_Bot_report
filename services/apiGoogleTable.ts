@@ -2,8 +2,8 @@
 import 'dotenv/config';
 import { google } from 'googleapis';
 
-const SPREADSHEET_ID = '1uQBd97IuX5BL6uY6MWkrpECr7YXu9H5uRDjhjwkom-8';
-// const SPREADSHEET_ID = '16Gr85TxzbdzXNaZ4UKpxgOa-NeLYQJTIrSB-ol-8CUE'; // TODO для теста
+// const SPREADSHEET_ID = '1uQBd97IuX5BL6uY6MWkrpECr7YXu9H5uRDjhjwkom-8';
+const SPREADSHEET_ID = '16Gr85TxzbdzXNaZ4UKpxgOa-NeLYQJTIrSB-ol-8CUE'; // TODO для теста
 const SHEET_NAME = 'Time';
 const auth = new google.auth.GoogleAuth({
   keyFile: process.env.PATH_API_GOOGLE,
@@ -73,6 +73,33 @@ export async function createGoogleFields(data: LeadRow) {
   await sheets.spreadsheets.values.append({
     spreadsheetId: SPREADSHEET_ID,
     range: 'A1', // Диапазон, начиная с первой строки
+    valueInputOption: 'RAW',
+    requestBody: {
+      values: data.values,
+    },
+  });
+}
+
+export async function updateGoogleFields(
+  data: LeadRow,
+  startField: string,
+  endField: string,
+) {
+  const sheets = google.sheets({ version: 'v4', auth });
+
+  // Сначала получаем все строки в выбранном столбце, начиная со второй
+  const columnResponse = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${SHEET_NAME}!${startField}2:${startField}`,
+  });
+
+  const values = columnResponse.data.values || [];
+  // Вычисляем последнюю строку с данными
+  const lastRow = values.length + 1;
+  console.log(lastRow, data.values.length);
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${startField}2:${endField}${lastRow}`,
     valueInputOption: 'RAW',
     requestBody: {
       values: data.values,
