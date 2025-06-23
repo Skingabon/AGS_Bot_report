@@ -329,12 +329,13 @@ export const createReportTimeToday = async (ctx: Context | null) => {
     endOfDay.setHours(23, 59, 59, 999);
 
     // Конвертируем в Unix timestamp (секунды)
-    // const startTimestamp = Math.floor(startOfDay.getTime() / 1000); //TODO Для прода
-    // const endTimestamp = Math.floor(endOfDay.getTime() / 1000);
-    const startDate = new Date('2025-05-01T00:00:00');
-    const endDate = new Date('2025-05-17T23:59:59');
-    const startTimestamp = Math.floor(startDate.getTime() / 1000);
-    const endTimestamp = Math.floor(endDate.getTime() / 1000);
+    const startTimestamp = Math.floor(startOfDay.getTime() / 1000); //TODO Для прода
+    const endTimestamp = Math.floor(endOfDay.getTime() / 1000);
+
+    // const startDate = new Date('2025-05-01T00:00:00');
+    // const endDate = new Date('2025-05-17T23:59:59');
+    // const startTimestamp = Math.floor(startDate.getTime() / 1000);
+    // const endTimestamp = Math.floor(endDate.getTime() / 1000);
 
     const response = await getLeadToday(startTimestamp, endTimestamp);
 
