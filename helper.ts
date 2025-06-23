@@ -13,6 +13,8 @@
 // };
 //
 
+import { CustomFields } from './interfaces';
+
 export const getDate = (time: number): string => {
   const date = new Date(time * 1000);
 
@@ -66,3 +68,74 @@ export const getPeriodTimestamps = (
     Math.floor(endDate.getTime() / 1000),
   ];
 };
+
+//Вычисляю разницу во времени между датами создания и распределения на рук-отдела серии и распр на инж - распр на рук отдела серии
+// Парсит дату из строки формата "YYYY.MM.DD HH:MM"
+export function parseCustomDate(dateStr: string): Date | null {
+  if (!dateStr) return null;
+
+  // Разбиваем строку "2025.04.22 15:30" на части
+  const [datePart, timePart] = dateStr.split(' ');
+  if (!datePart || !timePart) return null;
+
+  const [year, month, day] = datePart.split('.').map(Number);
+  const [hours, minutes] = timePart.split(':').map(Number);
+
+  // Проверяем валидность данных
+  if (
+    isNaN(year) ||
+    isNaN(month) ||
+    isNaN(day) ||
+    isNaN(hours) ||
+    isNaN(minutes)
+  ) {
+    return null;
+  }
+
+  return new Date(year, month - 1, day, hours, minutes);
+}
+// Безопасный парс даты из строки
+export function safeParseDate(str: string | null): Date | null {
+  if (!str) return null;
+  return parseCustomDate(str);
+}
+
+// Конвертирует разницу в миллисекундах в "HH:MM"
+export function formatDiff(ms: number): string {
+  if (ms <= 0) return '00:00';
+
+  const totalMinutes = Math.floor(ms / (1000 * 60));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+}
+
+export function getCurrentTime() {
+  return `${new Date().getHours()}:${new Date().getMinutes()}`;
+}
+
+//новые поля
+export function getFieldValue(
+  fields: CustomFields[],
+  fieldName: string,
+): string | null {
+  const field = fields.find((f) => f.field_name === fieldName);
+  return field?.values?.[0]?.value || null;
+}
+
+//// Форматирует дату в "YYYY.MM.DD HH:MM" (например, "2025.04.22 15:30")
+export function formatDate(value: string | number | null): string {
+  if (!value) return '';
+
+  const date = new Date(Number(value) * 1000);
+  if (isNaN(date.getTime())) return '';
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+
+  return `${year}.${month}.${day} ${hours}:${minutes}`;
+}

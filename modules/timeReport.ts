@@ -1,17 +1,28 @@
 import { Context } from 'grammy';
 import {
-  createGoogleFields,
   domain,
   getAllPipelines,
   getContactsByIdLead,
-  getGoogleSheetData,
+  getLeadById,
   getLeadToday,
   getNotesByIdContact,
   getNotesByLead,
-  updateGoogleField,
-  updateLeadDateCall,
-} from '../api';
-import { getDate, getPeriodTimestamps } from '../helper';
+} from '../services/apiAmo';
+import {
+  createGoogleFields,
+  getGoogleSheetData,
+  updateGoogleFields,
+} from '../services/apiGoogleTable';
+import {
+  formatDate,
+  formatDiff,
+  getCurrentTime,
+  getDate,
+  getFieldValue,
+  getPeriodTimestamps,
+  parseCustomDate,
+  safeParseDate,
+} from '../helper';
 
 export const incomingMessageDate = async (idLead: number) => {
   const res = await getContactsByIdLead(idLead);
@@ -26,7 +37,7 @@ export const incomingMessageDate = async (idLead: number) => {
   const firstMessage = incomingMessages[0];
   if (!firstMessage) return null;
 
-  const date = getDate(firstMessage.created_at);
+  const date = firstMessage.created_at;
 
   return date;
 };
@@ -42,18 +53,16 @@ const incomingCallDate = async (idLead: number) => {
   const firstCall = outgoingCalls[0];
   if (!firstCall) return null;
 
-  const date = getDate(firstCall.created_at);
+  const date = firstCall.created_at;
 
   return date;
 };
 
-async function processIncomingCallOrMessage({
+async function getCreatedAtIncomingCallOrMessage({
   idLead,
-  index = null,
 }: {
   idLead: number;
-  index?: number | null;
-}): Promise<string | null> {
+}): Promise<number | null> {
   let date = await incomingCallDate(idLead);
 
   if (!date) {
@@ -61,64 +70,180 @@ async function processIncomingCallOrMessage({
   }
 
   if (!date) {
-    date = 'Мы не ответили';
-  }
-
-  await updateLeadDateCall(idLead, date);
-
-  if (index !== null) {
-    await updateGoogleField(date, index + 2);
+    date = 0;
   }
 
   return date;
 }
 
+function isInvalidDateIncoming({
+  createAtLead,
+  createAtIncoming,
+}: {
+  createAtLead: number;
+  createAtIncoming: number;
+}): boolean {
+  return createAtLead > createAtIncoming;
+}
+
 //Заполняю звонки за прошлые периоды если их небыло раньше
 export const updateIncomingCall = async (ctx: Context | null) => {
   if (!ctx) return;
-  await ctx.reply('Начинаем проверять исходищие звонки!');
-  const idsLead = (await getGoogleSheetData('A')).flat();
-  const incomingData = (await getGoogleSheetData('J')).flat();
+  const values = [];
+  // const totalIncoming: string[] = [];
+  // const totalTimeAllWork: string[] = [];
+  // const totalDeltaTimeFirstResponse: string[] = [];
+  try {
+    await ctx.reply(`Начинаем проверять исходищие звонки! ${getCurrentTime()}`);
+    const idsLead = (await getGoogleSheetData('A')).flat();
+    const incomingData = (await getGoogleSheetData('T')).flat();
 
-  for (let i = 0; i < idsLead.length; i++) {
-    //TODO: Заменить если что
-    if (incomingData[i] !== 'Мы не ответили') continue;
+    for (let i = 0; i < idsLead.length; i++) {
+      try {
+        //TODO: Заменить если что
+        if (incomingData[i] === 'Мы не ответили') {
+          values.push(['Мы не ответили', '-', '-']);
+          continue;
+        }
 
-    const idLead = Number(idsLead[i]);
-    try {
-      await processIncomingCallOrMessage({
-        idLead: idLead,
-        index: i,
-      });
-    } catch (err) {
-      if (err instanceof Error) await console.log(`Ошибка: ${err.message}`);
+        const idLead = Number(idsLead[i]);
+        const lead = await getLeadById(idLead);
+        const date = await getCreatedAtIncomingCallOrMessage({
+          idLead,
+        });
+
+        if (!date) {
+          // await updateLeadDateCall(idLead, 'Мы не ответили');
+
+          values.push(['Мы не ответили', '-', '-']);
+          continue;
+        }
+
+        if (
+          isInvalidDateIncoming({
+            createAtLead: lead.created_at,
+            createAtIncoming: date,
+          })
+        ) {
+          // await updateLeadDateCall(idLead, 'Мы не ответили');
+          values.push(['Мы не ответили', '-', '-']);
+
+          continue;
+        }
+        const fields = lead.custom_fields_values || [];
+        let timeAllWork = '-';
+        const createdAtFormatted = formatDate(lead.created_at);
+        const dateSaveCreatedAt = safeParseDate(createdAtFormatted);
+        const incomingDate = safeParseDate(getDate(date));
+
+        if (incomingDate) {
+          if (dateSaveCreatedAt) {
+            timeAllWork = formatDiff(
+              incomingDate.getTime() - dateSaveCreatedAt.getTime(),
+            );
+          }
+        }
+
+        let deltaTimeFirstResponse = '';
+        const omAssignedAt = formatDate(
+          getFieldValue(fields, 'Время ОМ квал серия'),
+        );
+        const omRaspredByIngTime = formatDate(
+          getFieldValue(fields, 'Время Распр ОМ квал ИНЖ'),
+        );
+        //Получаем дату первого касания
+        const assignedAtDate = omAssignedAt
+          ? parseCustomDate(omAssignedAt)
+          : null;
+        const raspredIngAtDate = omRaspredByIngTime
+          ? parseCustomDate(omRaspredByIngTime)
+          : null;
+        const omAssignedBy = getFieldValue(fields, 'ОМ Квал серия') || '';
+
+        if (incomingDate) {
+          if (omAssignedBy && assignedAtDate) {
+            const diffMs = incomingDate.getTime() - assignedAtDate.getTime();
+            deltaTimeFirstResponse = formatDiff(diffMs);
+          } else if (!omAssignedBy && raspredIngAtDate) {
+            const diffMs = incomingDate.getTime() - raspredIngAtDate.getTime();
+            deltaTimeFirstResponse = formatDiff(diffMs);
+          }
+        }
+        values.push([getDate(date), timeAllWork, deltaTimeFirstResponse]);
+      } catch (err) {
+        values.push(['-', '-', '-']);
+        if (err instanceof Error) console.log(`Ошибка: ${err.message}`);
+      }
     }
+    await updateGoogleFields(
+      {
+        values,
+      },
+      'T',
+      'V',
+    );
+  } catch (err) {
+    if (err instanceof Error) console.log(`Ошибка: ${err.message}`);
   }
-  await ctx.reply('Готово!');
+
+  await ctx.reply(`Готово! ${getCurrentTime()}`);
 };
-//
 
-//новые поля
-function getFieldValue(fields: any[], fieldName: string): string | null {
-  const field = fields.find((f) => f.field_name === fieldName);
-  return field?.values?.[0]?.value || null;
-}
+export const showReportLeadByYesterday = async (
+  ctx: Context,
+  startDate: string,
+  endDate?: string,
+) => {
+  let timeDate: number[];
 
-//// Форматирует дату в "YYYY.MM.DD HH:MM" (например, "2025.04.22 15:30")
-function formatDate(value: string | number | null): string {
-  if (!value) return '';
+  if (endDate) {
+    timeDate = getPeriodTimestamps(startDate, endDate);
+  } else {
+    timeDate = getPeriodTimestamps(startDate);
+  }
+  const [startTimestamp, endTimestamp] = timeDate;
 
-  const date = new Date(Number(value) * 1000);
-  if (isNaN(date.getTime())) return '';
+  const response = await getLeadToday(startTimestamp, endTimestamp);
+  const totalLeads: number = response.length;
+  let countSeries = 0;
+  let countIng = 0;
+  let countClosed = 0;
+  let notDistributed = 0;
+  response.map((lead) => {
+    if (lead.status_id === 143) {
+      countClosed++;
+    }
+    if (lead.status_id === 50238949 || lead.status_id === 50238952) {
+      // Новая заявка или взято в работу
+      notDistributed++;
+    }
+    if (!lead.custom_fields_values) return;
+    lead.custom_fields_values.map((el) => {
+      if (el.field_id === 606679) {
+        // Если поле серии заполнено
+        countSeries++;
+      }
+      if (el.field_id === 606681) {
+        countIng++;
+      }
+    });
+  });
 
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  const hours = String(date.getHours()).padStart(2, '0');
-  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const period = !endDate ? 'вчера' : `период: ${startDate}-${endDate}`;
 
-  return `${year}.${month}.${day} ${hours}:${minutes}`;
-}
+  const periodOutput = `Отчет за ${period}`;
+  await ctx.reply(
+    `${periodOutput}
+Всего сделок: <b>${totalLeads}</b>
+Не распределено: <b>${notDistributed}</b>
+Серия: <b>${countSeries}</b>
+Инжиниринг: <b>${countIng}</b>  
+Закрыто и нереализовано: <b>${countClosed}</b>`,
+    {
+      parse_mode: 'HTML',
+    },
+  );
+};
 
 export const showReportLeadByPeriod = async (
   ctx: Context,
@@ -139,19 +264,26 @@ export const showReportLeadByPeriod = async (
   let countSeries = 0;
   let countIng = 0;
   let countClosed = 0;
+  let notDistributed = 0;
   response.map((lead) => {
+    // if (lead.pipeline_id !== 5716552) return;
+    if (lead.status_id === 143) {
+      countClosed++;
+    }
+    if (lead.status_id === 50238949 || lead.status_id === 50238952) {
+      // Новая заявка или взято в работу
+      notDistributed++;
+    }
     if (!lead.custom_fields_values) return;
     lead.custom_fields_values.map((el) => {
       if (el.field_id === 606679) {
+        // Если поле серии заполнено
         countSeries++;
       }
       if (el.field_id === 606681) {
         countIng++;
       }
     });
-    if (lead.status_id === 143) {
-      countClosed++;
-    }
   });
 
   const period = !endDate ? 'сегодня' : `период: ${startDate}-${endDate}`;
@@ -160,6 +292,7 @@ export const showReportLeadByPeriod = async (
   await ctx.reply(
     `${periodOutput}
 Всего сделок: <b>${totalLeads}</b>
+Не распределено: <b>${notDistributed}</b>
 Серия: <b>${countSeries}</b>
 Инжиниринг: <b>${countIng}</b>  
 Закрыто и нереализовано: <b>${countClosed}</b>`,
@@ -196,10 +329,10 @@ export const createReportTimeToday = async (ctx: Context | null) => {
     endOfDay.setHours(23, 59, 59, 999);
 
     // Конвертируем в Unix timestamp (секунды)
-    // const startTimestamp = Math.floor(startOfDay.getTime() / 1000);
+    // const startTimestamp = Math.floor(startOfDay.getTime() / 1000); //TODO Для прода
     // const endTimestamp = Math.floor(endOfDay.getTime() / 1000);
-    const startDate = new Date('2025-04-23T00:00:00');
-    const endDate = new Date('2025-04-23T23:59:59');
+    const startDate = new Date('2025-05-01T00:00:00');
+    const endDate = new Date('2025-05-17T23:59:59');
     const startTimestamp = Math.floor(startDate.getTime() / 1000);
     const endTimestamp = Math.floor(endDate.getTime() / 1000);
 
@@ -212,43 +345,33 @@ export const createReportTimeToday = async (ctx: Context | null) => {
       throw new Error('No leads found for the given filter.');
     }
 
-    let dateIncomingCallArr: string[] = [];
-
-    await ctx.reply('Беру звонки и сообщения из сделки');
-    for (let i = 0; i < leads.length; i++) {
-      const idLead = leads[i].id;
-      try {
-        const date = await processIncomingCallOrMessage({
-          idLead: idLead,
-        });
-        dateIncomingCallArr.push(date || '*');
-      } catch (err) {
-        dateIncomingCallArr.push('-');
-        if (err instanceof Error) await console.log(`Ошибка: ${err.message}`);
-      }
-    }
-    await ctx.reply('Закончил с "первым контактом"');
-
     // Преобразование данных для загрузки в Google Sheets
-    const googleSheetsData = leads.map((lead, index) => {
+    const googleSheetsData = leads.map((lead) => {
       // Получаем название воронки по ID
       const pipelineName = pipelinesMap[lead.pipeline_id] || 'Не найдено';
 
       // Добавляем название статуса в зависимости от ID статуса
+      //Заменить на switch case
       let statusName = '';
       if (lead.status_id === 142) {
         statusName = 'Успешно реализовано';
       } else if (lead.status_id === 143) {
         statusName = 'Закрыто и не реализовано';
       }
+      if (lead.status_id === 18913120) {
+        statusName = 'Отдел серийного об-я';
+      }
+      if (lead.status_id === 73470054) {
+        statusName = 'Отдел инжиниринга ';
+      }
 
       //новые поля
       const fields = lead.custom_fields_values || [];
       const newLeadSourse = getFieldValue(fields, 'Источник лида') || '';
-      const newLeadTime = formatDate(
-        getFieldValue(fields, 'Дата/время новая заявка'),
-      );
-      const newLeadAdmin = getFieldValue(fields, 'ОМ Новая заявка') || '';
+      // const newLeadTime = formatDate(
+      //   getFieldValue(fields, 'Дата/время новая заявка'),
+      // );
+      // const newLeadAdmin = getFieldValue(fields, 'ОМ Новая заявка') || '';
 
       const omTakenAt = formatDate(
         getFieldValue(fields, 'Дата/время взято в работу'),
@@ -268,49 +391,6 @@ export const createReportTimeToday = async (ctx: Context | null) => {
         getFieldValue(fields, 'Дата/время КВАЛ инж'),
       );
 
-      // Конвертирует разницу в миллисекундах в "HH:MM"
-      function formatDiff(ms: number): string {
-        if (ms <= 0) return '00:00';
-
-        const totalMinutes = Math.floor(ms / (1000 * 60));
-        const hours = Math.floor(totalMinutes / 60);
-        const minutes = totalMinutes % 60;
-
-        return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
-      }
-      //
-
-      //Вычисляю разницу во времени между датами создания и распределения на рук-отдела серии и распр на инж - распр на рук отдела серии
-      // Парсит дату из строки формата "YYYY.MM.DD HH:MM"
-      function parseCustomDate(dateStr: string): Date | null {
-        if (!dateStr) return null;
-
-        // Разбиваем строку "2025.04.22 15:30" на части
-        const [datePart, timePart] = dateStr.split(' ');
-        if (!datePart || !timePart) return null;
-
-        const [year, month, day] = datePart.split('.').map(Number);
-        const [hours, minutes] = timePart.split(':').map(Number);
-
-        // Проверяем валидность данных
-        if (
-          isNaN(year) ||
-          isNaN(month) ||
-          isNaN(day) ||
-          isNaN(hours) ||
-          isNaN(minutes)
-        ) {
-          return null;
-        }
-
-        return new Date(year, month - 1, day, hours, minutes);
-      }
-      // Безопасный парс даты из строки
-      function safeParseDate(str: string | null): Date | null {
-        if (!str) return null;
-        return parseCustomDate(str);
-      }
-
       // Берем нужные даты
       const createdDate = new Date(lead.created_at * 1000);
       const createdAtFormatted = formatDate(lead.created_at); // "2025.04.22 15:30"
@@ -325,7 +405,7 @@ export const createReportTimeToday = async (ctx: Context | null) => {
         diffCreatedToTaken = formatDiff(diffMs);
       }
 
-      let diffTakenToTakeIng = '';
+      let diffTakenToTakeIng: string;
       if (
         takenDate &&
         takeIngDate &&
@@ -367,55 +447,38 @@ export const createReportTimeToday = async (ctx: Context | null) => {
         diffIngRukManeger = formatDiff(diffMs);
       }
 
-      // Вычисляем разницу времени первого каcания менеджера
-      let deltaTimeFirstResponse = '';
-      //Получаем дату первого касания
-      const incomingDate = safeParseDate(dateIncomingCallArr[index]);
-      const assignedAtDate = omAssignedAt
-        ? parseCustomDate(omAssignedAt)
-        : null;
-      const raspredIngAtDate = omRaspredByIngTime
-        ? parseCustomDate(omRaspredByIngTime)
-        : null;
-
-      let timeAllWork = '-';
-      const dateSaveCreatedAt = safeParseDate(createdAtFormatted);
-
-      if (incomingDate) {
-        if (omAssignedBy && assignedAtDate) {
-          const diffMs = incomingDate.getTime() - assignedAtDate.getTime();
-          deltaTimeFirstResponse = formatDiff(diffMs);
-        } else if (!omAssignedBy && raspredIngAtDate) {
-          const diffMs = incomingDate.getTime() - raspredIngAtDate.getTime();
-          deltaTimeFirstResponse = formatDiff(diffMs);
-        }
-        if (dateSaveCreatedAt) {
-          timeAllWork = formatDiff(
-            incomingDate.getTime() - dateSaveCreatedAt.getTime(),
-          );
-        }
-      }
+      const date = new Date(lead.updated_at * 1000);
+      const formattedUpdatedAt = `${date.toLocaleDateString('ru-RU')} ${date.toLocaleTimeString('ru-RU')}`;
+      // Сортирую по возрастанию даты создания
+      leads.sort((a, b) => a.created_at - b.created_at);
 
       return [
-        lead.name, // 1
-        `https://${domain}.amocrm.ru/leads/detail/${lead.id}`, // 2 Ссылка на лид
-        newLeadSourse, // 3 Источник сделки
-        createdAtFormatted, // 4 Создан
-        omTakenAt, // 5 ДатаВремя "ОМ Взято в работу"
-        diffCreatedToTaken, // 6 Взято в работу - Создание ВРЕМЯ
-        omTakenBy, // 7 Менеджер "ОМ Взято в работу"
-        omAssignedAt, // 8 ДатаВремя "Время ОМ квал серия"
-        diffAssignedToTaken, // 9 На серию - Взято в работу  ВРЕМЯ
-        omAssignedBy, // 10 Менеджер "ОМ Квал серия"
-        omTakeIng, // 11 На инжиниринг
-        diffTakenToTakeIng, //12 На инж - Взято в работу
-        omTakenByIng, // 13 РОтдела "ОМ Квал ИНЖ"
-        omRaspredByIngTime, // 15 Время распределения на менеджера "Время Распр ОМ квал ИНЖ"
-        diffIngRukManeger, // Дельта распредления рук отдела на менеджера
-        omRaspredByIng, // 14 Распределен на менеджера "Распр ОМ квал ИНЖ"
-        dateIncomingCallArr[index], // 16 Реакция менеджера на лид
-        deltaTimeFirstResponse, // 17 Дельта времени первого качания менеджера
-        timeAllWork,
+        lead.id, // 1 A ID
+        lead.name, // 2 B
+        `https://${domain}.amocrm.ru/leads/detail/${lead.id}`, // 3 C Ссылка на лид
+        newLeadSourse, // 4 D Источник сделки
+        statusName, // 5 E Название статуса
+        pipelineName, // 6 F Название воронки
+        createdAtFormatted, // 7 G Создан
+        omTakenAt, // 8 H ДатаВремя "ОМ Взято в работу"
+        diffCreatedToTaken, // 9 I Дельта Взято в работу - Создание ВРЕМЯ
+        omTakenBy, // 10 J Рук отдела Менеджер "ОМ Взято в работу"
+        omAssignedAt, //11 K На серию. ДатаВремя "Время ОМ квал серия"
+        diffAssignedToTaken, // 12 L Дельта На серию - Взято в работу  ВРЕМЯ
+        omAssignedBy, // 13 M Менеджер Серии "ОМ Квал серия"
+        omTakeIng, // 14 N Распределен на инжиниринг
+        diffTakenToTakeIng, //15 O На инж - Взято в работу
+        omTakenByIng, // 16 Р Кто распределил наинжиниринг "ОМ Квал ИНЖ"
+        omRaspredByIngTime, // 17 Q Время распределения на менеджера инжиниринга "Время Распр ОМ квал ИНЖ"
+        diffIngRukManeger, // 18 R  Дельта распредления Кто распределил на менеджера
+        omRaspredByIng, // 14 S Менеджер отдела инжиниринга. Распределен на менеджера "Распр ОМ квал ИНЖ"
+        '-', // Первое касание
+        // dateIncomingCallArr[index], // 16 T Первое касание. Реакция менеджера на лид Первое касание
+        '-', //deltaTimeFirstResponse
+        // deltaTimeFirstResponse, // 17 U Дельта от распределения на серию или инжтиниринг до первого касания менеджера - звонок или письмо или отввет в мессенджере.
+        '-', // timeAllWork
+        // timeAllWork, // 18 V  Общее время сделки в работе от даты/время создания до даты последнего действия W
+        formattedUpdatedAt, // 19 W Дата/время последнего обновления в сделке
         // lead.price,
         // lead.status_id, // ID статуса
         // statusName, // Название статуса
@@ -426,26 +489,9 @@ export const createReportTimeToday = async (ctx: Context | null) => {
         // new Date(lead.updated_at * 1000).toLocaleString(),
       ];
     });
-    //TODO: не уверен что нужно каждый раз создавать заголовки
+
     const resource = {
-      values: [
-        [
-          '',
-          '',
-          '',
-          '',
-          '',
-          '',
-          '',
-          new Date().toLocaleString('ru-RU'),
-          '',
-          '',
-          '',
-          '',
-          '',
-        ],
-        ...googleSheetsData,
-      ],
+      values: googleSheetsData,
     };
     await ctx.reply('Добавляю в таблицу');
     await createGoogleFields(resource);

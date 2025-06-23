@@ -4,8 +4,10 @@ import { Bot, Context, InlineKeyboard } from 'grammy';
 import {
   createReportTimeToday,
   showReportLeadByPeriod,
+  showReportLeadByYesterday,
   updateIncomingCall,
 } from './modules/timeReport';
+import { sendGoogleSheetLinkByEmail } from './modules/emailSender';
 
 const bot = new Bot(process.env.BOT_API_KEY || '');
 let botContext: Context | null = null;
@@ -23,9 +25,15 @@ bot.api.setMyCommands([
 ]);
 
 const menuKeyboard = new InlineKeyboard()
-  .text('Заполнить исходящие звонки (ручной запуск)', 'generate')
-  .row()
+
   .text('Создать отчет за последний день (ручной запуск)', 'report-time')
+  .row()
+  //TODO Изменить логику заполнения поля Первое качание - если дата/время первого касапния младше даты создания сделки....
+  .text('Заполнить исходящие звонки (ручной запуск )', 'generate')
+  .row()
+  .text('Отправить ссылку на Google Таблицу на почту', 'send-google-link')
+  .row()
+  .text('Отчет по сделкам за вчерашний день', 'report-lead-yesterday')
   .row()
   .text('Отчет по сделкам за сегодня', 'report-lead-today')
   .row()
@@ -48,11 +56,39 @@ bot.callbackQuery('generate', async (ctx) => {
 
 bot.callbackQuery('report-time', async (ctx) => {
   await createReportTimeToday(ctx);
+  await updateIncomingCall(ctx);
+});
+
+bot.callbackQuery('send-google-link', async (ctx) => {
+  try {
+    const userEmail = process.env.RECEIVER_EMAIL; // куда отправляем письмо
+    const googleSheetUrl = process.env.GOOGLE_SHEET_URL; // ссылка на гугл-таблицу
+
+    if (!userEmail || !googleSheetUrl) {
+      await ctx.reply('Email или ссылка не настроены в .env');
+      return;
+    }
+
+    await sendGoogleSheetLinkByEmail(userEmail, googleSheetUrl);
+    await ctx.reply('Ссылка на Google Таблицу отправлена на почту!');
+  } catch (err) {
+    console.error(err);
+    await ctx.reply('Ошибка при отправке письма.');
+  }
+  await ctx.answerCallbackQuery();
+});
+
+bot.callbackQuery('report-lead-yesterday', async (ctx) => {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayDate = yesterday.toLocaleDateString('ru-Ru');
+  await showReportLeadByYesterday(ctx, yesterdayDate);
+  await ctx.answerCallbackQuery();
 });
 
 bot.callbackQuery('report-lead-today', async (ctx) => {
   const currentDate = new Date().toLocaleDateString('ru-RU');
-  await showReportLeadByPeriod(ctx, currentDate, currentDate);
+  await showReportLeadByPeriod(ctx, currentDate);
   await ctx.answerCallbackQuery();
 });
 
@@ -100,10 +136,29 @@ bot.on('message:text', async (ctx) => {
   }
 });
 
+//Ежедневное заполнение отчета в 23.50
 cron.schedule('50 23 * * *', async () => {
   console.log('Запуск ежедневного обновления...');
-  await updateIncomingCall(botContext).catch(console.error);
   await createReportTimeToday(botContext).catch(console.error);
+  await updateIncomingCall(botContext).catch(console.error);
+});
+
+//Ежедневная отправка ссылки неа отчет в 9.00
+cron.schedule('00 09 * * *', async () => {
+  console.log('Запуск ежедневного отчета на почту...');
+  try {
+    const userEmail = process.env.RECEIVER_EMAIL; // куда отправляем письмо
+    const googleSheetUrl = process.env.GOOGLE_SHEET_URL; // ссылка на гугл-таблицу
+
+    if (!userEmail || !googleSheetUrl) {
+      return console.log('Неверные данные');
+    }
+
+    await sendGoogleSheetLinkByEmail(userEmail, googleSheetUrl);
+    console.log('Ссылка на Google Таблицу отправлена на почту!');
+  } catch (err) {
+    console.error(err);
+  }
 });
 
 bot.start();
