@@ -194,55 +194,63 @@ export const showReportLeadByYesterday = async (
   startDate: string,
   endDate?: string,
 ) => {
-  let timeDate: number[];
+  try {
+    let timeDate: number[];
 
-  if (endDate) {
-    timeDate = getPeriodTimestamps(startDate, endDate);
-  } else {
-    timeDate = getPeriodTimestamps(startDate);
-  }
-  const [startTimestamp, endTimestamp] = timeDate;
+    if (endDate) {
+      timeDate = getPeriodTimestamps(startDate, endDate);
+    } else {
+      timeDate = getPeriodTimestamps(startDate);
+    }
+    const [startTimestamp, endTimestamp] = timeDate;
 
-  const response = await getLeadToday(startTimestamp, endTimestamp);
-  const totalLeads: number = response.length;
-  let countSeries = 0;
-  let countIng = 0;
-  let countClosed = 0;
-  let notDistributed = 0;
-  response.map((lead) => {
-    if (lead.status_id === 143) {
-      countClosed++;
-    }
-    if (lead.status_id === 50238949 || lead.status_id === 50238952) {
-      // Новая заявка или взято в работу
-      notDistributed++;
-    }
-    if (!lead.custom_fields_values) return;
-    lead.custom_fields_values.map((el) => {
-      if (el.field_id === 606679) {
-        // Если поле серии заполнено
-        countSeries++;
+    const response = await getLeadToday(startTimestamp, endTimestamp);
+    const totalLeads: number = response.length;
+    let countSeries = 0;
+    let countIng = 0;
+    let countClosed = 0;
+    let notDistributed = 0;
+    response.map((lead) => {
+      if (lead.status_id === 143) {
+        countClosed++;
       }
-      if (el.field_id === 606681) {
-        countIng++;
+      if (lead.status_id === 50238949 || lead.status_id === 50238952) {
+        // Новая заявка или взято в работу
+        notDistributed++;
       }
+      if (!lead.custom_fields_values) return;
+      lead.custom_fields_values.map((el) => {
+        if (el.field_id === 606679) {
+          // Если поле серии заполнено
+          countSeries++;
+        }
+        if (el.field_id === 606681) {
+          countIng++;
+        }
+      });
     });
-  });
 
-  const period = !endDate ? 'вчера' : `период: ${startDate}-${endDate}`;
+    const period = !endDate ? 'вчера' : `период: ${startDate}-${endDate}`;
 
-  const periodOutput = `Отчет за ${period}`;
-  await ctx.reply(
-    `${periodOutput}
+    const periodOutput = `Отчет за ${period}`;
+    await ctx.reply(
+      `${periodOutput}
 Всего сделок: <b>${totalLeads}</b>
 Не распределено: <b>${notDistributed}</b>
 Серия: <b>${countSeries}</b>
 Инжиниринг: <b>${countIng}</b>  
 Закрыто и нереализовано: <b>${countClosed}</b>`,
-    {
-      parse_mode: 'HTML',
-    },
-  );
+      {
+        parse_mode: 'HTML',
+      },
+    );
+  } catch (error) {
+    if (error instanceof Error) {
+      await ctx.reply('Бот остановлен. Скорее всего сделок нет');
+
+      console.log('error' + error.message);
+    }
+  }
 };
 
 export const showReportLeadByPeriod = async (
@@ -250,56 +258,64 @@ export const showReportLeadByPeriod = async (
   startDate: string,
   endDate?: string,
 ) => {
-  let timeDate: number[];
+  try {
+    let timeDate: number[];
 
-  if (endDate) {
-    timeDate = getPeriodTimestamps(startDate, endDate);
-  } else {
-    timeDate = getPeriodTimestamps(startDate);
-  }
-  const [startTimestamp, endTimestamp] = timeDate;
+    if (endDate) {
+      timeDate = getPeriodTimestamps(startDate, endDate);
+    } else {
+      timeDate = getPeriodTimestamps(startDate);
+    }
+    const [startTimestamp, endTimestamp] = timeDate;
 
-  const response = await getLeadToday(startTimestamp, endTimestamp);
-  const totalLeads: number = response.length;
-  let countSeries = 0;
-  let countIng = 0;
-  let countClosed = 0;
-  let notDistributed = 0;
-  response.map((lead) => {
-    // if (lead.pipeline_id !== 5716552) return;
-    if (lead.status_id === 143) {
-      countClosed++;
-    }
-    if (lead.status_id === 50238949 || lead.status_id === 50238952) {
-      // Новая заявка или взято в работу
-      notDistributed++;
-    }
-    if (!lead.custom_fields_values) return;
-    lead.custom_fields_values.map((el) => {
-      if (el.field_id === 606679) {
-        // Если поле серии заполнено
-        countSeries++;
+    const response = await getLeadToday(startTimestamp, endTimestamp);
+    const totalLeads: number = response.length;
+    let countSeries = 0;
+    let countIng = 0;
+    let countClosed = 0;
+    let notDistributed = 0;
+    response.map((lead) => {
+      // if (lead.pipeline_id !== 5716552) return;
+      if (lead.status_id === 143) {
+        countClosed++;
       }
-      if (el.field_id === 606681) {
-        countIng++;
+      if (lead.status_id === 50238949 || lead.status_id === 50238952) {
+        // Новая заявка или взято в работу
+        notDistributed++;
       }
+      if (!lead.custom_fields_values) return;
+      lead.custom_fields_values.map((el) => {
+        if (el.field_id === 606679) {
+          // Если поле серии заполнено
+          countSeries++;
+        }
+        if (el.field_id === 606681) {
+          countIng++;
+        }
+      });
     });
-  });
 
-  const period = !endDate ? 'сегодня' : `период: ${startDate}-${endDate}`;
+    const period = !endDate ? 'сегодня' : `период: ${startDate}-${endDate}`;
 
-  const periodOutput = `Отчет за ${period}`;
-  await ctx.reply(
-    `${periodOutput}
+    const periodOutput = `Отчет за ${period}`;
+    await ctx.reply(
+      `${periodOutput}
 Всего сделок: <b>${totalLeads}</b>
 Не распределено: <b>${notDistributed}</b>
 Серия: <b>${countSeries}</b>
 Инжиниринг: <b>${countIng}</b>  
 Закрыто и нереализовано: <b>${countClosed}</b>`,
-    {
-      parse_mode: 'HTML',
-    },
-  );
+      {
+        parse_mode: 'HTML',
+      },
+    );
+  } catch (error) {
+    if (error instanceof Error) {
+      await ctx.reply('Бот остановлен. Скорее всего сделок нет');
+
+      console.log('error' + error.message);
+    }
+  }
 };
 
 export const createReportTimeToday = async (ctx: Context | null) => {
