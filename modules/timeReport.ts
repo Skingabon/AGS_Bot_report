@@ -332,8 +332,8 @@ export const createReportTimeToday = async (ctx: Context | null) => {
     const startTimestamp = Math.floor(startOfDay.getTime() / 1000); //TODO Для прода
     const endTimestamp = Math.floor(endOfDay.getTime() / 1000);
 
-    // const startDate = new Date('2025-05-01T00:00:00');
-    // const endDate = new Date('2025-05-17T23:59:59');
+    // const startDate = new Date('2025-06-24T00:00:00');
+    // const endDate = new Date('2025-06-27T23:59:59');
     // const startTimestamp = Math.floor(startDate.getTime() / 1000);
     // const endTimestamp = Math.floor(endDate.getTime() / 1000);
 
@@ -369,6 +369,7 @@ export const createReportTimeToday = async (ctx: Context | null) => {
       //новые поля
       const fields = lead.custom_fields_values || [];
       const newLeadSourse = getFieldValue(fields, 'Источник лида') || '';
+      console.log(newLeadSourse);
       // const newLeadTime = formatDate(
       //   getFieldValue(fields, 'Дата/время новая заявка'),
       // );

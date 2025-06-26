@@ -2,8 +2,7 @@
 import 'dotenv/config';
 import { google } from 'googleapis';
 
-// const SPREADSHEET_ID = '1uQBd97IuX5BL6uY6MWkrpECr7YXu9H5uRDjhjwkom-8';
-const SPREADSHEET_ID = '16Gr85TxzbdzXNaZ4UKpxgOa-NeLYQJTIrSB-ol-8CUE'; // TODO для теста
+const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const SHEET_NAME = 'Time';
 const auth = new google.auth.GoogleAuth({
   keyFile: process.env.PATH_API_GOOGLE,
