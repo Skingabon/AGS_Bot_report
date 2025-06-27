@@ -4,7 +4,7 @@
   "description": "",
   "main": "bot",
   "scripts": {
-    "dev": "nodemon bot.ts",
+    "dev": "nodemon --watch 'src/' --watch 'bot.ts' -e ts,js,json --exec ts-node bot.ts",
     "build": "tsc",
     "start": "node dist/bot.js",
     "prod": "npm run build && npm start"
