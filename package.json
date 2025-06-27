@@ -4,7 +4,10 @@
   "description": "",
   "main": "bot",
   "scripts": {
-    "start": "nodemon bot.ts"
+    "dev": "nodemon bot.ts",
+    "build": "tsc",
+    "start": "node dist/bot.js",
+    "prod": "npm run build && npm start"
   },
   "keywords": [],
   "author": "",
