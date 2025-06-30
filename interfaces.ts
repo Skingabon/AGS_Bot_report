@@ -62,3 +62,42 @@ export type noteType = {
     };
   };
 };
+
+export interface noteTypeCall {
+  id: number;
+  entity_id: number;
+  created_by: number;
+  updated_by: number;
+  created_at: number;
+  updated_at: number;
+  responsible_user_id: number;
+  group_id: number;
+  note_type: 'call_out';
+  params: {
+    uniq: string;
+    duration: number;
+    source: string;
+    link: string;
+    phone: string;
+    call_result: null;
+    call_status: number;
+  };
+  account_id: number;
+  _links: {
+    self: {
+      href: string;
+    };
+  };
+}
+
+type Note = noteTypeCall | noteType;
+
+// Проверка на noteType (сообщение)
+export function isMessageNote(note: Note): note is noteType {
+  return note.note_type === 'amomail_message';
+}
+
+// Проверка на noteTypeCall (звонок)
+export function isCallNote(note: Note): note is noteTypeCall {
+  return note.note_type === 'call_out';
+}

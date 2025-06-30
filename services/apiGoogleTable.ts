@@ -37,7 +37,6 @@ export async function getGoogleSheetData(
 
   // Вычисляем последнюю строку с данными
   const lastRow = values.length + 1; // +1, так как данные начинаются со 2-й строки
-  // console.log(lastRow);
   // Теперь запрашиваем только нужный диапазон
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
@@ -95,7 +94,6 @@ export async function updateGoogleFields(
   const values = columnResponse.data.values || [];
   // Вычисляем последнюю строку с данными
   const lastRow = values.length + 1;
-  console.log(lastRow, data.values.length);
   await sheets.spreadsheets.values.update({
     spreadsheetId: SPREADSHEET_ID,
     range: `${startField}2:${endField}${lastRow}`,
@@ -105,3 +103,19 @@ export async function updateGoogleFields(
     },
   });
 }
+
+type sheetUpdates = { range: string; values: (string | number)[][] };
+
+export const updateDateIncomingGooglePack = async (
+  sheetUpdates: sheetUpdates[],
+) => {
+  const sheets = google.sheets({ version: 'v4', auth });
+  // @ts-ignore
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: SPREADSHEET_ID,
+    resource: {
+      data: sheetUpdates,
+      valueInputOption: 'RAW',
+    },
+  });
+};

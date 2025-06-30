@@ -7,11 +7,12 @@ import {
   getLeadToday,
   getNotesByIdContact,
   getNotesByLead,
+  updateLeadDateCall,
 } from '../services/apiAmo';
 import {
   createGoogleFields,
   getGoogleSheetData,
-  updateGoogleFields,
+  updateDateIncomingGooglePack,
 } from '../services/apiGoogleTable';
 import {
   formatDate,
@@ -23,57 +24,97 @@ import {
   parseCustomDate,
   safeParseDate,
 } from '../helper';
+import { isCallNote, isMessageNote, Lead } from '../interfaces';
 
-export const incomingMessageDate = async (idLead: number) => {
-  const res = await getContactsByIdLead(idLead);
-  const contactId = res[0].to_entity_id;
-  const noteContact = await getNotesByIdContact(contactId);
+type communicationType = { source: string; time: number };
 
-  const incomingMessages = noteContact
-    .filter((el) => !el.params.income)
-    .sort((a, b) => a.created_at - b.created_at);
-  if (!incomingMessages.length) return null; // Нет ни писем, ни звонков
+export const incomingActionDateFromContact = async (
+  idLead: number,
+  leadCreateDate: number,
+): Promise<null | communicationType> => {
+  try {
+    const res = await getContactsByIdLead(idLead);
+    const contactId = res[0].to_entity_id;
+    const noteContact = await getNotesByIdContact(contactId);
+    let communicationsDate: communicationType[] = [];
 
-  const firstMessage = incomingMessages[0];
-  if (!firstMessage) return null;
+    noteContact.map((el) => {
+      // Берем сделки, где звонки не старше самой сделки
+      if (el.created_at < leadCreateDate) return;
+      if (isMessageNote(el)) {
+        if (!el.params.income) {
+          communicationsDate.push({
+            source: 'Сбщ',
+            time: el.params.delivery.time,
+          });
+        }
+      }
+      if (isCallNote(el)) {
+        //call_status === 4 значит звонок состоялся
+        if (el.note_type === 'call_out' && el.params.call_status === 4) {
+          communicationsDate.push({
+            source: 'Звонок',
+            time: el.created_at,
+          });
+        }
+      }
+    });
+    if (!communicationsDate.length) {
+      return null;
+    }
 
-  const date = firstMessage.created_at;
+    communicationsDate.sort((a, b) => a.time - b.time);
+    // if (!incomingMessages) return null; // Нет писем
 
-  return date;
+    const firstMessageDate = communicationsDate[0];
+    if (!firstMessageDate) return null;
+
+    return firstMessageDate;
+  } catch (err) {
+    if (err instanceof Error) {
+      console.error(`Глобальная ошибка: ${err.message}`);
+    }
+    return null;
+  }
 };
 
-const incomingCallDate = async (idLead: number) => {
-  const notes = await getNotesByLead(idLead);
-  if (!notes || notes.length === 0) return null;
+const incomingCallDate = async (
+  idLead: number,
+): Promise<null | communicationType> => {
+  try {
+    const notes = await getNotesByLead(idLead);
+    if (!notes || notes.length === 0) return null;
 
-  const outgoingCalls = notes
-    .filter((el) => el.note_type === 'call_out')
-    .sort((a, b) => a.created_at - b.created_at);
+    const outgoingCalls = notes
+      .filter((el) => el.note_type === 'call_out')
+      .sort((a, b) => a.created_at - b.created_at);
 
-  const firstCall = outgoingCalls[0];
-  if (!firstCall) return null;
+    const firstCall = outgoingCalls[0];
+    if (!firstCall) return null;
 
-  const date = firstCall.created_at;
+    const date = firstCall.created_at;
 
-  return date;
+    return { source: 'Звонок', time: date };
+  } catch (err) {
+    if (err instanceof Error) {
+      console.error(`Глобальная ошибка: ${err.message}`);
+    }
+    return null;
+  }
 };
 
-async function getCreatedAtIncomingCallOrMessage({
-  idLead,
-}: {
-  idLead: number;
-}): Promise<number | null> {
-  let date = await incomingCallDate(idLead);
-
-  if (!date) {
-    date = await incomingMessageDate(idLead);
+async function getCreatedAtIncomingCallOrMessage(
+  lead: Lead,
+): Promise<communicationType | null> {
+  let incomingAction = await incomingActionDateFromContact(
+    lead.id,
+    lead.created_at,
+  );
+  if (!incomingAction?.time) {
+    incomingAction = await incomingCallDate(lead.id);
   }
 
-  if (!date) {
-    date = 0;
-  }
-
-  return date;
+  return incomingAction;
 }
 
 function isInvalidDateIncoming({
@@ -89,104 +130,157 @@ function isInvalidDateIncoming({
 //Заполняю звонки за прошлые периоды если их небыло раньше
 export const updateIncomingCall = async (ctx: Context | null) => {
   if (!ctx) return;
-  const values = [];
-  // const totalIncoming: string[] = [];
-  // const totalTimeAllWork: string[] = [];
-  // const totalDeltaTimeFirstResponse: string[] = [];
+
   try {
-    await ctx.reply(`Начинаем проверять исходищие звонки! ${getCurrentTime()}`);
+    await ctx.reply(`Начинаем проверять исходящие звонки! ${getCurrentTime()}`);
+
+    // Получаем данные из таблицы
     const idsLead = (await getGoogleSheetData('A')).flat();
-    const incomingData = (await getGoogleSheetData('T')).flat();
 
-    for (let i = 0; i < idsLead.length; i++) {
-      try {
-        //TODO: Заменить если что
-        if (incomingData[i] === 'Мы не ответили') {
-          values.push(['Мы не ответили', '-', '-']);
-          continue;
-        }
+    // Подготавливаем данные для пакетного обновления
+    const sheetUpdates: {
+      range: string;
+      values: (string | number)[][];
+    }[] = [];
 
-        const idLead = Number(idsLead[i]);
-        const lead = await getLeadById(idLead);
-        const date = await getCreatedAtIncomingCallOrMessage({
-          idLead,
-        });
+    const amoUpdates: Promise<void>[] = [];
+    const batchSize = 50; // Размер пакета для обработки
+    let processedCount = 0;
 
-        if (!date) {
-          // await updateLeadDateCall(idLead, 'Мы не ответили');
+    // Обрабатываем лиды пакетами
+    for (let i = 0; i < idsLead.length; i += batchSize) {
+      const batch = idsLead.slice(i, i + batchSize);
 
-          values.push(['Мы не ответили', '-', '-']);
-          continue;
-        }
+      // Обрабатываем текущий пакет
+      for (let j = 0; j < batch.length; j++) {
+        const idx = i + j;
+        const rowNumber = idx + 2; // +2 для учета заголовка
 
-        if (
-          isInvalidDateIncoming({
-            createAtLead: lead.created_at,
-            createAtIncoming: date,
-          })
-        ) {
-          // await updateLeadDateCall(idLead, 'Мы не ответили');
-          values.push(['Мы не ответили', '-', '-']);
+        try {
+          const idLead = Number(batch[j]);
+          const lead = await getLeadById(idLead);
+          const incomingAction = await getCreatedAtIncomingCallOrMessage(lead);
 
-          continue;
-        }
-        const fields = lead.custom_fields_values || [];
-        let timeAllWork = '-';
-        const createdAtFormatted = formatDate(lead.created_at);
-        const dateSaveCreatedAt = safeParseDate(createdAtFormatted);
-        const incomingDate = safeParseDate(getDate(date));
+          if (!incomingAction) {
+            sheetUpdates.push({
+              range: `T${rowNumber}:V${rowNumber}`,
+              values: [['Мы не ответили', '-', '-']],
+            });
+            continue;
+          }
 
-        if (incomingDate) {
-          if (dateSaveCreatedAt) {
+          if (
+            isInvalidDateIncoming({
+              createAtLead: lead.created_at,
+              createAtIncoming: incomingAction.time,
+            })
+          ) {
+            sheetUpdates.push({
+              range: `T${rowNumber}:V${rowNumber}`,
+              values: [['Старый лид', '-', '-']],
+            });
+            continue;
+          }
+
+          // Обработка данных
+          const fields = lead.custom_fields_values || [];
+          let timeAllWork = '-';
+          const createdAtFormatted = formatDate(lead.created_at);
+          const dateSaveCreatedAt = safeParseDate(createdAtFormatted);
+          const incomingDate = safeParseDate(getDate(incomingAction.time));
+
+          if (incomingDate && dateSaveCreatedAt) {
             timeAllWork = formatDiff(
               incomingDate.getTime() - dateSaveCreatedAt.getTime(),
             );
           }
-        }
 
-        let deltaTimeFirstResponse = '';
-        const omAssignedAt = formatDate(
-          getFieldValue(fields, 'Время ОМ квал серия'),
-        );
-        const omRaspredByIngTime = formatDate(
-          getFieldValue(fields, 'Время Распр ОМ квал ИНЖ'),
-        );
-        //Получаем дату первого касания
-        const assignedAtDate = omAssignedAt
-          ? parseCustomDate(omAssignedAt)
-          : null;
-        const raspredIngAtDate = omRaspredByIngTime
-          ? parseCustomDate(omRaspredByIngTime)
-          : null;
-        const omAssignedBy = getFieldValue(fields, 'ОМ Квал серия') || '';
+          let deltaTimeFirstResponse = '';
+          const omAssignedAt = formatDate(
+            getFieldValue(fields, 'Время ОМ квал серия'),
+          );
+          const omRaspredByIngTime = formatDate(
+            getFieldValue(fields, 'Время Распр ОМ квал ИНЖ'),
+          );
 
-        if (incomingDate) {
-          if (omAssignedBy && assignedAtDate) {
-            const diffMs = incomingDate.getTime() - assignedAtDate.getTime();
-            deltaTimeFirstResponse = formatDiff(diffMs);
-          } else if (!omAssignedBy && raspredIngAtDate) {
-            const diffMs = incomingDate.getTime() - raspredIngAtDate.getTime();
-            deltaTimeFirstResponse = formatDiff(diffMs);
+          const assignedAtDate = omAssignedAt
+            ? parseCustomDate(omAssignedAt)
+            : null;
+          const raspredIngAtDate = omRaspredByIngTime
+            ? parseCustomDate(omRaspredByIngTime)
+            : null;
+          const omAssignedBy = getFieldValue(fields, 'ОМ Квал серия') || '';
+
+          if (incomingDate) {
+            if (omAssignedBy && assignedAtDate) {
+              deltaTimeFirstResponse = formatDiff(
+                incomingDate.getTime() - assignedAtDate.getTime(),
+              );
+            } else if (!omAssignedBy && raspredIngAtDate) {
+              deltaTimeFirstResponse = formatDiff(
+                incomingDate.getTime() - raspredIngAtDate.getTime(),
+              );
+            }
+          }
+
+          // Добавляем обновления
+          sheetUpdates.push({
+            range: `T${rowNumber}:V${rowNumber}`,
+            values: [
+              [
+                `${getDate(incomingAction.time)} / ${incomingAction.source}`,
+                timeAllWork,
+                deltaTimeFirstResponse,
+              ],
+            ],
+          });
+
+          // Добавляем обновление в AMO
+          amoUpdates.push(
+            updateLeadDateCall(idLead, getDate(incomingAction.time)),
+          );
+
+          processedCount++;
+
+          // // Отправляем промежуточный отчет каждые 100 обработанных лидов
+          // if (processedCount % 100 === 0) {
+          //   await ctx.reply(
+          //     `Доб ${processedCount} из ${idsLead.length} лидов...`,
+          //   );
+          // }
+        } catch (err) {
+          const rowNumber = idx + 2;
+          sheetUpdates.push({
+            range: `T${rowNumber}:V${rowNumber}`,
+            values: [['Ошибка обработки', '-', '-']],
+          });
+          if (err instanceof Error) {
+            console.log(
+              `Ошибка при обработке лида ${batch[j]}: ${err.message}`,
+            );
           }
         }
-        values.push([getDate(date), timeAllWork, deltaTimeFirstResponse]);
-      } catch (err) {
-        values.push(['-', '-', '-']);
-        if (err instanceof Error) console.log(`Ошибка: ${err.message}`);
+      }
+
+      // Пакетное обновление Google Sheets для текущего пакета
+      if (sheetUpdates.length > 0) {
+        await updateDateIncomingGooglePack(sheetUpdates);
+        sheetUpdates.length = 0; // Очищаем массив после обновления
       }
     }
-    await updateGoogleFields(
-      {
-        values,
-      },
-      'T',
-      'V',
+
+    // Обновляем данные в AMO пакетно
+    await Promise.all(amoUpdates);
+
+    await ctx.reply(
+      `Готово! Обработано ${processedCount} лидов. ${getCurrentTime()}`,
     );
   } catch (err) {
-    if (err instanceof Error) console.log(`Ошибка: ${err.message}`);
+    if (err instanceof Error) {
+      console.error(`Глобальная ошибка: ${err.message}`);
+      await ctx.reply(`Произошла ошибка: ${err.message}`);
+    }
   }
-
-  await ctx.reply(`Готово! ${getCurrentTime()}`);
 };
 
 export const showReportLeadByYesterday = async (
@@ -348,8 +442,8 @@ export const createReportTimeToday = async (ctx: Context | null) => {
     const startTimestamp = Math.floor(startOfDay.getTime() / 1000); //TODO Для прода
     const endTimestamp = Math.floor(endOfDay.getTime() / 1000);
 
-    // const startDate = new Date('2025-06-24T00:00:00');
-    // const endDate = new Date('2025-06-27T23:59:59');
+    // const startDate = new Date('2025-06-28T00:00:00');
+    // const endDate = new Date('2025-06-29T23:59:59');
     // const startTimestamp = Math.floor(startDate.getTime() / 1000);
     // const endTimestamp = Math.floor(endDate.getTime() / 1000);
 
