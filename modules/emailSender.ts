@@ -1,18 +1,27 @@
-import nodemailer from 'nodemailer';
+import 'dotenv/config';
+import sgMail from '@sendgrid/mail';
 
 export async function sendGoogleSheetLinkByEmail(to: string, sheetUrl: string) {
-  const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-  });
+  sgMail.setApiKey(process.env.API_KEY_MAIL || '');
 
-  await transporter.sendMail({
-    from: process.env.SMTP_USER,
+  await sgMail.send({
     to,
+    from: process.env.SMTP_USER || '',
     subject: 'Отчет по работе с лидами',
     html: `<p>Здравствуйте. Отчет о работе с лидами по ссылке: <a href="${sheetUrl}">${sheetUrl}</a></p>`,
   });
+  // const transporter = nodemailer.createTransport({
+  //   service: 'gmail',
+  //   auth: {
+  //     user: process.env.SMTP_USER,
+  //     pass: process.env.SMTP_PASS,
+  //   },
+  // });
+  //
+  // await transporter.sendMail({
+  //   from: process.env.SMTP_USER,
+  //   to,
+  //   subject: 'Отчет по работе с лидами',
+  //   html: `<p>Здравствуйте. Отчет о работе с лидами по ссылке: <a href="${sheetUrl}">${sheetUrl}</a></p>`,
+  // });
 }
