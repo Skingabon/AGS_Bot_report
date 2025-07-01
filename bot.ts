@@ -155,9 +155,14 @@ cron.schedule('00 09 * * *', async () => {
     }
 
     await sendGoogleSheetLinkByEmail(userEmail, googleSheetUrl);
-    console.log('Ссылка на Google Таблицу отправлена на почту!');
+    if (botContext) {
+      await botContext.reply('Ссылка на Google Таблицу отправлена на почту!');
+    }
   } catch (err) {
     console.error(err);
+    if (botContext) {
+      await botContext.reply(`Ошибка при отправке на почту: ${err}`);
+    }
   }
 });
 
