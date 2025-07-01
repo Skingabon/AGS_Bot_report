@@ -73,7 +73,7 @@ bot.callbackQuery('send-google-link', async (ctx) => {
     await ctx.reply('Ссылка на Google Таблицу отправлена на почту!');
   } catch (err) {
     console.error(err);
-    await ctx.reply('Ошибка при отправке письма.');
+    await ctx.reply(`Ошибка при отправке на почту: ${err}`);
   }
   await ctx.answerCallbackQuery();
 });
