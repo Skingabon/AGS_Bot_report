@@ -12,7 +12,7 @@ import {
 import {
   createGoogleFields,
   getGoogleSheetData,
-  updateDateIncomingGooglePack,
+  updateFieldsGooglePack,
 } from '../services/apiGoogleTable';
 import {
   formatDate,
@@ -25,6 +25,7 @@ import {
   safeParseDate,
 } from '../helper';
 import { isCallNote, isMessageNote, Lead } from '../interfaces';
+import { getParamsLead, getStatusLead } from './updateFields';
 
 type communicationType = { source: string; time: number };
 
@@ -143,7 +144,7 @@ export const updateIncomingCall = async (ctx: Context | null) => {
       values: (string | number)[][];
     }[] = [];
 
-    const amoUpdates: Promise<void>[] = [];
+    const amoUpdatesPromises: Promise<void>[] = [];
     const batchSize = 50; // Размер пакета для обработки
     let processedCount = 0;
 
@@ -236,7 +237,7 @@ export const updateIncomingCall = async (ctx: Context | null) => {
           });
 
           // Добавляем обновление в AMO
-          amoUpdates.push(
+          amoUpdatesPromises.push(
             updateLeadDateCall(idLead, getDate(incomingAction.time)),
           );
 
@@ -264,13 +265,13 @@ export const updateIncomingCall = async (ctx: Context | null) => {
 
       // Пакетное обновление Google Sheets для текущего пакета
       if (sheetUpdates.length > 0) {
-        await updateDateIncomingGooglePack(sheetUpdates);
+        await updateFieldsGooglePack(sheetUpdates);
         sheetUpdates.length = 0; // Очищаем массив после обновления
       }
     }
 
     // Обновляем данные в AMO пакетно
-    await Promise.all(amoUpdates);
+    await Promise.all(amoUpdatesPromises);
 
     await ctx.reply(
       `Готово! Обработано ${processedCount} лидов. ${getCurrentTime()}`,
@@ -279,6 +280,124 @@ export const updateIncomingCall = async (ctx: Context | null) => {
     if (err instanceof Error) {
       console.error(`Глобальная ошибка: ${err.message}`);
       await ctx.reply(`Произошла ошибка: ${err.message}`);
+    }
+  }
+};
+
+export const updateAllFiled = async (ctx: Context | null) => {
+  if (!ctx) return;
+  try {
+    await ctx.reply('Заполняю основные поля');
+    const idsLead = (await getGoogleSheetData('A')).flat();
+
+    // Подготавливаем данные для пакетного обновления
+    const sheetUpdates: {
+      range: string;
+      values: (string | number)[][];
+    }[] = [];
+
+    const pipelinesResponse = await getAllPipelines();
+    await ctx.reply('Нашел данные о воронке');
+    const pipelines = pipelinesResponse;
+    const pipelinesMap = pipelines.reduce(
+      (
+        acc: { [key: number]: string },
+        pipeline: { id: number; name: string },
+      ) => {
+        acc[pipeline.id] = pipeline.name;
+        return acc;
+      },
+      {},
+    );
+
+    const batchSize = 50; // Размер пакета для обработки
+    let processedCount = 0;
+
+    // Обрабатываем лиды пакетами
+    for (let i = 0; i < idsLead.length; i += batchSize) {
+      const batch = idsLead.slice(i, i + batchSize);
+
+      // Обрабатываем текущий пакет
+      for (let j = 0; j < batch.length; j++) {
+        const idx = i + j;
+        const rowNumber = idx + 2; // +2 для учета заголовка
+
+        try {
+          const idLead = Number(batch[j]);
+          const lead = await getLeadById(idLead);
+          const {
+            statusName,
+            pipelineName,
+            createdAtFormatted,
+            omTakenAt,
+            diffCreatedToTaken,
+            omTakenBy,
+            omAssignedAt,
+            diffAssignedToTaken,
+            omAssignedBy,
+            omTakeIng,
+            diffTakenToTakeIng,
+            omTakenByIng,
+            omRaspredByIngTime,
+            diffIngRukManeger,
+            omRaspredByIng,
+            reasonForRefusal,
+          } = getParamsLead({ lead, pipelinesMap });
+
+          // Добавляем обновления
+          sheetUpdates.push({
+            range: `E${rowNumber}:S${rowNumber}`,
+            values: [
+              [
+                statusName,
+                pipelineName,
+                createdAtFormatted,
+                omTakenAt,
+                diffCreatedToTaken,
+                omTakenBy,
+                omAssignedAt,
+                diffAssignedToTaken,
+                omAssignedBy,
+                omTakeIng,
+                diffTakenToTakeIng,
+                omTakenByIng,
+                omRaspredByIngTime,
+                diffIngRukManeger,
+                omRaspredByIng,
+              ],
+            ],
+          });
+          sheetUpdates.push({
+            range: `X${rowNumber}:Y${rowNumber}`,
+            values: [[reasonForRefusal, lead.price]],
+          });
+
+          processedCount++;
+        } catch (err) {
+          if (err instanceof Error) {
+            console.log(
+              `Ошибка при обработке лида ${batch[j]}: ${err.message}`,
+            );
+          }
+        }
+      }
+
+      // Пакетное обновление Google Sheets для текущего пакета
+      if (sheetUpdates.length > 0) {
+        await updateFieldsGooglePack(sheetUpdates);
+        sheetUpdates.length = 0; // Очищаем массив после обновления
+      }
+    }
+
+    // Обновляем данные в AMO пакетно
+    await ctx.reply(
+      `Готово! Обработано ${processedCount} лидов. ${getCurrentTime()}`,
+    );
+  } catch (error) {
+    if (error instanceof Error) {
+      await ctx.reply('Бот остановлен. Скорее всего сделок нет');
+
+      console.log('error' + error.message);
     }
   }
 };
@@ -442,8 +561,8 @@ export const createReportTimeToday = async (ctx: Context | null) => {
     const startTimestamp = Math.floor(startOfDay.getTime() / 1000); //TODO Для прода
     const endTimestamp = Math.floor(endOfDay.getTime() / 1000);
 
-    // const startDate = new Date('2025-06-28T00:00:00');
-    // const endDate = new Date('2025-06-29T23:59:59');
+    // const startDate = new Date('2025-06-26T00:00:00');
+    // const endDate = new Date('2025-06-26T23:59:59');
     // const startTimestamp = Math.floor(startDate.getTime() / 1000);
     // const endTimestamp = Math.floor(endDate.getTime() / 1000);
 
@@ -458,111 +577,26 @@ export const createReportTimeToday = async (ctx: Context | null) => {
 
     // Преобразование данных для загрузки в Google Sheets
     const googleSheetsData = leads.map((lead) => {
-      // Получаем название воронки по ID
-      const pipelineName = pipelinesMap[lead.pipeline_id] || 'Не найдено';
-
-      // Добавляем название статуса в зависимости от ID статуса
-      //Заменить на switch case
-      let statusName = '';
-      if (lead.status_id === 142) {
-        statusName = 'Успешно реализовано';
-      } else if (lead.status_id === 143) {
-        statusName = 'Закрыто и не реализовано';
-      }
-      if (lead.status_id === 18913120) {
-        statusName = 'Отдел серийного об-я';
-      }
-      if (lead.status_id === 73470054) {
-        statusName = 'Отдел инжиниринга ';
-      }
-
-      //новые поля
-      const fields = lead.custom_fields_values || [];
-      const newLeadSourse = getFieldValue(fields, 'Источник лида') || '';
-      console.log(newLeadSourse);
-      // const newLeadTime = formatDate(
-      //   getFieldValue(fields, 'Дата/время новая заявка'),
-      // );
-      // const newLeadAdmin = getFieldValue(fields, 'ОМ Новая заявка') || '';
-
-      const omTakenAt = formatDate(
-        getFieldValue(fields, 'Дата/время взято в работу'),
-      ); // Форматируем сразу
-      const omTakenBy = getFieldValue(fields, 'ОМ Взято в работу') || '';
-
-      const omAssignedAt = formatDate(
-        getFieldValue(fields, 'Время ОМ квал серия'),
-      );
-      const omAssignedBy = getFieldValue(fields, 'ОМ Квал серия') || '';
-      const omTakenByIng = getFieldValue(fields, 'ОМ Квал инж') || '';
-      const omRaspredByIng = getFieldValue(fields, 'Распр ОМ квал ИНЖ') || '';
-      const omRaspredByIngTime = formatDate(
-        getFieldValue(fields, 'Время Распр ОМ квал ИНЖ'),
-      );
-      const omTakeIng = formatDate(
-        getFieldValue(fields, 'Дата/время КВАЛ инж'),
-      );
-
-      // Берем нужные даты
-      const createdDate = new Date(lead.created_at * 1000);
-      const createdAtFormatted = formatDate(lead.created_at); // "2025.04.22 15:30"
-      const takenDate = omTakenAt ? parseCustomDate(omTakenAt) : null; // Парсим обратно, если нужно
-      const takeIngDate = omTakeIng ? parseCustomDate(omTakeIng) : null;
-      const assignedDate = omAssignedAt ? parseCustomDate(omAssignedAt) : null;
-
-      // Вычисляем разницу
-      let diffCreatedToTaken = '';
-      if (takenDate && !isNaN(takenDate.getTime())) {
-        const diffMs = takenDate.getTime() - createdDate.getTime();
-        diffCreatedToTaken = formatDiff(diffMs);
-      }
-
-      let diffTakenToTakeIng: string;
-      if (
-        takenDate &&
-        takeIngDate &&
-        !isNaN(takenDate.getTime()) &&
-        !isNaN(takeIngDate.getTime())
-      ) {
-        const diffMs = takeIngDate.getTime() - takenDate.getTime();
-
-        diffTakenToTakeIng = formatDiff(diffMs);
-      } else {
-        diffTakenToTakeIng = '';
-      }
-
-      let diffAssignedToTaken = '';
-      if (
-        takenDate &&
-        assignedDate &&
-        !isNaN(takenDate.getTime()) &&
-        !isNaN(assignedDate.getTime())
-      ) {
-        const diffMs = assignedDate.getTime() - takenDate.getTime();
-        diffAssignedToTaken = formatDiff(diffMs);
-      }
-
-      // Разница между распределением на инженера и тем, когда рук отдела взял в работу
-      let diffIngRukManeger = '';
-      const raspredIngDate = omRaspredByIngTime
-        ? parseCustomDate(omRaspredByIngTime)
-        : null;
-      const takeIngDateForDiff = omTakeIng ? parseCustomDate(omTakeIng) : null;
-
-      if (
-        raspredIngDate &&
-        takeIngDateForDiff &&
-        !isNaN(raspredIngDate.getTime()) &&
-        !isNaN(takeIngDateForDiff.getTime())
-      ) {
-        const diffMs = takeIngDateForDiff.getTime() - raspredIngDate.getTime();
-        diffIngRukManeger = formatDiff(diffMs);
-      }
-
-      const date = new Date(lead.updated_at * 1000);
-      const formattedUpdatedAt = `${date.toLocaleDateString('ru-RU')} ${date.toLocaleTimeString('ru-RU')}`;
-      // Сортирую по возрастанию даты создания
-      leads.sort((a, b) => a.created_at - b.created_at);
+      const {
+        newLeadSourse,
+        statusName,
+        pipelineName,
+        createdAtFormatted,
+        omTakenAt,
+        diffCreatedToTaken,
+        omTakenBy,
+        omAssignedAt,
+        diffAssignedToTaken,
+        omAssignedBy,
+        omTakeIng,
+        diffTakenToTakeIng,
+        omTakenByIng,
+        omRaspredByIngTime,
+        diffIngRukManeger,
+        omRaspredByIng,
+        formattedUpdatedAt,
+        reasonForRefusal,
+      } = getParamsLead({ lead, pipelinesMap });
 
       return [
         lead.id, // 1 A ID
@@ -599,6 +633,8 @@ export const createReportTimeToday = async (ctx: Context | null) => {
         // newLeadAdmin, // ответственный в сделке
         // newLeadTime, // Время сделка Создана на этапе Новая заявка
         // new Date(lead.updated_at * 1000).toLocaleString(),
+        reasonForRefusal, // причина отказа
+        lead.price, // бюджет
       ];
     });
 

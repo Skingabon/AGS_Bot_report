@@ -5,6 +5,7 @@ import {
   createReportTimeToday,
   showReportLeadByPeriod,
   showReportLeadByYesterday,
+  updateAllFiled,
   updateIncomingCall,
 } from './modules/timeReport';
 import { sendGoogleSheetLinkByEmail } from './modules/emailSender';
@@ -51,11 +52,13 @@ bot.command('start', async (ctx) => {
 });
 
 bot.callbackQuery('generate', async (ctx) => {
+  await updateAllFiled(ctx);
   await updateIncomingCall(ctx);
 });
 
 bot.callbackQuery('report-time', async (ctx) => {
   await createReportTimeToday(ctx);
+  await updateAllFiled(ctx);
   await updateIncomingCall(ctx);
 });
 
@@ -140,6 +143,7 @@ bot.on('message:text', async (ctx) => {
 cron.schedule('50 23 * * *', async () => {
   console.log('Запуск ежедневного обновления...');
   await createReportTimeToday(botContext).catch(console.error);
+  await updateAllFiled(botContext).catch(console.error);
   await updateIncomingCall(botContext).catch(console.error);
 });
 

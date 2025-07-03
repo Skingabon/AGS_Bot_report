@@ -106,9 +106,7 @@ export async function updateGoogleFields(
 
 type sheetUpdates = { range: string; values: (string | number)[][] };
 
-export const updateDateIncomingGooglePack = async (
-  sheetUpdates: sheetUpdates[],
-) => {
+export const updateFieldsGooglePack = async (sheetUpdates: sheetUpdates[]) => {
   const sheets = google.sheets({ version: 'v4', auth });
   // @ts-ignore
   await sheets.spreadsheets.values.batchUpdate({
