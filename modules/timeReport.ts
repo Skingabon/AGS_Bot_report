@@ -342,6 +342,7 @@ export const updateAllFiled = async (ctx: Context | null) => {
             diffIngRukManeger,
             omRaspredByIng,
             reasonForRefusal,
+            formattedUpdatedAt,
           } = getParamsLead({ lead, pipelinesMap });
 
           // Добавляем обновления
@@ -368,8 +369,8 @@ export const updateAllFiled = async (ctx: Context | null) => {
             ],
           });
           sheetUpdates.push({
-            range: `X${rowNumber}:Y${rowNumber}`,
-            values: [[reasonForRefusal, lead.price]],
+            range: `W${rowNumber}:Y${rowNumber}`,
+            values: [[formattedUpdatedAt, reasonForRefusal, lead.price]],
           });
 
           processedCount++;
