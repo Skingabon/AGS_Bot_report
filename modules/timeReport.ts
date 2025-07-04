@@ -230,8 +230,8 @@ export const updateIncomingCall = async (ctx: Context | null) => {
             values: [
               [
                 `${getDate(incomingAction.time)} / ${incomingAction.source}`,
-                timeAllWork,
                 deltaTimeFirstResponse,
+                timeAllWork,
               ],
             ],
           });
