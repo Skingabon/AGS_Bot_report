@@ -25,17 +25,10 @@ export const getStatusLead = (lead: Lead): string => {
 
 type getParamsLeadType = {
   lead: Lead;
-  // leads: Lead[];
   pipelinesMap: { [p: number]: string };
-  // isCreate: boolean;
 };
 
-export const getParamsLead = ({
-  // leads,
-  lead,
-  pipelinesMap,
-  // isCreate,
-}: getParamsLeadType) => {
+export const getParamsLead = ({ lead, pipelinesMap }: getParamsLeadType) => {
   const pipelineName = pipelinesMap[lead.pipeline_id] || 'Не найдено';
 
   // Добавляем название статуса в зависимости от ID статуса
@@ -46,11 +39,17 @@ export const getParamsLead = ({
   const fields = lead.custom_fields_values || [];
   const newLeadSourse = getFieldValue(fields, 'Источник лида') || '';
   const reasonForRefusal = getFieldValue(fields, 'Причина отказа') || '';
-  // console.log(newLeadSourse);
   // const newLeadTime = formatDate(
   //   getFieldValue(fields, 'Дата/время новая заявка'),
   // );
   // const newLeadAdmin = getFieldValue(fields, 'ОМ Новая заявка') || '';
+  const dateContract = getFieldValue(fields, 'Дата Договор заключен');
+  const dateNoLead = getFieldValue(fields, 'Дата Не целевой лид');
+
+  const totalTimeLead = formatDate(dateContract || dateNoLead);
+
+  const nameIndustry = getFieldValue(fields, 'Отрасль') || '';
+  const nameProduct = getFieldValue(fields, 'Оборудование') || '';
 
   const omTakenAt = formatDate(
     getFieldValue(fields, 'Дата/время взято в работу'),
@@ -147,6 +146,9 @@ export const getParamsLead = ({
     diffIngRukManeger, // 18 R  Дельта распредления Кто распределил на менеджера
     omRaspredByIng,
     formattedUpdatedAt, // 19 W Дата/время последнего обновления в сделке
-    reasonForRefusal, // причина отказа
+    reasonForRefusal, // X причина отказа
+    totalTimeLead, // Z
+    nameIndustry, // AA
+    nameProduct, //AB
   };
 };

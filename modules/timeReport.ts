@@ -25,7 +25,7 @@ import {
   safeParseDate,
 } from '../helper';
 import { isCallNote, isMessageNote, Lead } from '../interfaces';
-import { getParamsLead, getStatusLead } from './updateFields';
+import { getParamsLead } from './updateFields';
 
 type communicationType = { source: string; time: number };
 
@@ -137,6 +137,7 @@ export const updateIncomingCall = async (ctx: Context | null) => {
 
     // Получаем данные из таблицы
     const idsLead = (await getGoogleSheetData('A')).flat();
+    const firstActionFromTable = (await getGoogleSheetData('T')).flat();
 
     // Подготавливаем данные для пакетного обновления
     const sheetUpdates: {
@@ -156,6 +157,8 @@ export const updateIncomingCall = async (ctx: Context | null) => {
       for (let j = 0; j < batch.length; j++) {
         const idx = i + j;
         const rowNumber = idx + 2; // +2 для учета заголовка
+
+        if (firstActionFromTable[rowNumber] !== 'Мы не ответили') continue;
 
         try {
           const idLead = Number(batch[j]);
@@ -343,6 +346,9 @@ export const updateAllFiled = async (ctx: Context | null) => {
             omRaspredByIng,
             reasonForRefusal,
             formattedUpdatedAt,
+            totalTimeLead,
+            nameIndustry,
+            nameProduct,
           } = getParamsLead({ lead, pipelinesMap });
 
           // Добавляем обновления
@@ -369,8 +375,17 @@ export const updateAllFiled = async (ctx: Context | null) => {
             ],
           });
           sheetUpdates.push({
-            range: `W${rowNumber}:Y${rowNumber}`,
-            values: [[formattedUpdatedAt, reasonForRefusal, lead.price]],
+            range: `W${rowNumber}:AB${rowNumber}`,
+            values: [
+              [
+                formattedUpdatedAt,
+                reasonForRefusal,
+                lead.price,
+                totalTimeLead,
+                nameIndustry,
+                nameProduct,
+              ],
+            ],
           });
 
           processedCount++;
