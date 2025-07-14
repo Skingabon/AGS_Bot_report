@@ -157,8 +157,9 @@ export const updateIncomingCall = async (ctx: Context | null) => {
       for (let j = 0; j < batch.length; j++) {
         const idx = i + j;
         const rowNumber = idx + 2; // +2 для учета заголовка
-
-        if (firstActionFromTable[rowNumber] !== 'Мы не ответили') continue;
+        const firstTouch = firstActionFromTable[rowNumber];
+        // TODO
+        if (firstTouch !== 'Мы не ответили') continue;
 
         try {
           const idLead = Number(batch[j]);
@@ -577,8 +578,8 @@ export const createReportTimeToday = async (ctx: Context | null) => {
     const startTimestamp = Math.floor(startOfDay.getTime() / 1000); //TODO Для прода
     const endTimestamp = Math.floor(endOfDay.getTime() / 1000);
 
-    // const startDate = new Date('2025-06-26T00:00:00');
-    // const endDate = new Date('2025-06-26T23:59:59');
+    // const startDate = new Date('2025-05-01T00:00:00');
+    // const endDate = new Date('2025-07-13T23:59:59');
     // const startTimestamp = Math.floor(startDate.getTime() / 1000);
     // const endTimestamp = Math.floor(endDate.getTime() / 1000);
 
@@ -586,10 +587,11 @@ export const createReportTimeToday = async (ctx: Context | null) => {
 
     await ctx.reply('Собрал все сделки за сегодняшний день');
 
-    const leads = response;
+    let leads = response;
     if (!leads || leads.length === 0) {
       throw new Error('No leads found for the given filter.');
     }
+    leads = leads.sort((a, b) => a.created_at - b.created_at);
 
     // Преобразование данных для загрузки в Google Sheets
     const googleSheetsData = leads.map((lead) => {
@@ -613,6 +615,8 @@ export const createReportTimeToday = async (ctx: Context | null) => {
         formattedUpdatedAt,
         reasonForRefusal,
       } = getParamsLead({ lead, pipelinesMap });
+
+      // leads.sort((a, b) => a.created_at - b.created_at);
 
       return [
         lead.id, // 1 A ID

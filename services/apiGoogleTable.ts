@@ -70,7 +70,7 @@ export async function createGoogleFields(data: LeadRow) {
   const sheets = google.sheets({ version: 'v4', auth });
   await sheets.spreadsheets.values.append({
     spreadsheetId: SPREADSHEET_ID,
-    range: 'A1', // Диапазон, начиная с первой строки
+    range: `${SHEET_NAME}!A1`, // Диапазон, начиная с первой строки
     valueInputOption: 'RAW',
     requestBody: {
       values: data.values,
@@ -108,11 +108,17 @@ type sheetUpdates = { range: string; values: (string | number)[][] };
 
 export const updateFieldsGooglePack = async (sheetUpdates: sheetUpdates[]) => {
   const sheets = google.sheets({ version: 'v4', auth });
-  // @ts-ignore
+
+  // Добавляем название листа к каждому range
+  const updatesWithSheet = sheetUpdates.map((update) => ({
+    ...update,
+    range: `${SHEET_NAME}!${update.range}`,
+  }));
+
   await sheets.spreadsheets.values.batchUpdate({
     spreadsheetId: SPREADSHEET_ID,
-    resource: {
-      data: sheetUpdates,
+    requestBody: {
+      data: updatesWithSheet,
       valueInputOption: 'RAW',
     },
   });

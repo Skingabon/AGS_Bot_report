@@ -77,17 +77,45 @@ export async function getAllPipelines(): Promise<Pipeline[]> {
 export async function getLeadToday(
   startTimestamp: number,
   endTimestamp: number,
+  page: number = 1,
+  allLeads: Lead[] = [],
 ): Promise<Lead[]> {
-  const response = await fetch(
-    `${apiUrl}?filter[created_at][from]=${startTimestamp}&filter[created_at][to]=${endTimestamp}`,
-    {
-      headers: {
-        Authorization: `Bearer ${TOKEN}`,
+  try {
+    const limit = 250; // Максимальное количество сделок на страницу
+    const response = await fetch(
+      `${apiUrl}?filter[created_at][from]=${startTimestamp}&filter[created_at][to]=${endTimestamp}&page=${page}&limit=${limit}`,
+      {
+        headers: {
+          Authorization: `Bearer ${TOKEN}`,
+        },
       },
-    },
-  );
-  const res = await response.json();
-  return res._embedded.leads;
+    );
+
+    if (!response.ok) {
+      throw new Error(`Ошибка API: ${response.status} ${response.statusText}`);
+    }
+
+    const res = await response.json();
+    const leads = res._embedded?.leads || [];
+
+    // Собираем все сделки рекурсивно
+    const collectedLeads = [...allLeads, ...leads];
+
+    // Если есть больше страниц, делаем следующий запрос
+    if (leads.length === limit) {
+      return getLeadToday(
+        startTimestamp,
+        endTimestamp,
+        page + 1,
+        collectedLeads,
+      );
+    }
+
+    return collectedLeads;
+  } catch (error) {
+    console.error('Ошибка при получении сделок:', error);
+    throw error;
+  }
 }
 
 export async function getLeadById(id: number): Promise<Lead> {

@@ -125,7 +125,7 @@ export const getParamsLead = ({ lead, pipelinesMap }: getParamsLeadType) => {
   const formattedUpdatedAt = `${date.toLocaleDateString('ru-RU')} ${date.toLocaleTimeString('ru-RU')}`;
   // Сортирую по возрастанию даты создания
   // if (isCreate) {
-  //   // leads.sort((a, b) => a.created_at - b.created_at);
+  //   leads.sort((a, b) => a.created_at - b.created_at);
   // }
 
   return {
