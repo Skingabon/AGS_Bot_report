@@ -139,3 +139,14 @@ export function formatDate(value: string | number | null): string {
 
   return `${year}.${month}.${day} ${hours}:${minutes}`;
 }
+
+export const formatDateByPeriod = (inputDate: string): string => {
+  const [day, month, year] = inputDate.split('.').map(Number);
+
+  const formattedYear = year.toString();
+  const formattedMonth = month.toString().padStart(2, '0');
+  const formattedDay = day.toString().padStart(2, '0');
+
+  // Возвращаем дату в нужном формате
+  return `${formattedYear}-${formattedMonth}-${formattedDay}T00:00:00`;
+};

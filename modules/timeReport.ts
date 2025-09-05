@@ -16,6 +16,7 @@ import {
 } from '../services/apiGoogleTable';
 import {
   formatDate,
+  formatDateByPeriod,
   formatDiff,
   getCurrentTime,
   getDate,
@@ -548,7 +549,11 @@ export const showReportLeadByPeriod = async (
   }
 };
 
-export const createReportTimeToday = async (ctx: Context | null) => {
+export const createReportTimeByPeriod = async (
+  ctx: Context | null,
+  startDate?: string,
+  endDate?: string,
+) => {
   if (!ctx) return;
   await ctx.reply('Начинаю создавать таблицу');
   try {
@@ -565,23 +570,29 @@ export const createReportTimeToday = async (ctx: Context | null) => {
       },
       {},
     );
+    let startTimestamp;
+    let endTimestamp;
     // Пример временных меток (начало и конец дня)
-    const today = new Date();
+    if (!startDate || !endDate) {
+      const today = new Date();
 
-    const startOfDay = new Date(today);
-    const endOfDay = new Date(today);
+      const startOfDay = new Date(today);
+      const endOfDay = new Date(today);
 
-    startOfDay.setHours(0, 0, 0, 0);
-    endOfDay.setHours(23, 59, 59, 999);
+      startOfDay.setHours(0, 0, 0, 0);
+      endOfDay.setHours(23, 59, 59, 999);
 
-    // Конвертируем в Unix timestamp (секунды)
-    const startTimestamp = Math.floor(startOfDay.getTime() / 1000); //TODO Для прода
-    const endTimestamp = Math.floor(endOfDay.getTime() / 1000);
+      // Конвертируем в Unix timestamp (секунды)
+      startTimestamp = Math.floor(startOfDay.getTime() / 1000); //TODO Для прода
+      endTimestamp = Math.floor(endOfDay.getTime() / 1000);
+    } else {
+      const startDateFormated = new Date(formatDateByPeriod(startDate));
+      const endDateFormated = new Date(formatDateByPeriod(endDate));
+      endDateFormated.setHours(23, 59, 59, 999);
 
-    // const startDate = new Date('2025-05-01T00:00:00');
-    // const endDate = new Date('2025-07-13T23:59:59');
-    // const startTimestamp = Math.floor(startDate.getTime() / 1000);
-    // const endTimestamp = Math.floor(endDate.getTime() / 1000);
+      startTimestamp = Math.floor(startDateFormated.getTime() / 1000);
+      endTimestamp = Math.floor(endDateFormated.getTime() / 1000);
+    }
 
     const response = await getLeadToday(startTimestamp, endTimestamp);
 

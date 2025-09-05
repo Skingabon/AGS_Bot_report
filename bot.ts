@@ -2,7 +2,7 @@ import 'dotenv/config';
 import cron from 'node-cron';
 import { Bot, Context, InlineKeyboard } from 'grammy';
 import {
-  createReportTimeToday,
+  createReportTimeByPeriod,
   showReportLeadByPeriod,
   showReportLeadByYesterday,
   updateAllFiled,
@@ -13,12 +13,109 @@ import { sendGoogleSheetLinkByEmail } from './modules/emailSender';
 const bot = new Bot(process.env.BOT_API_KEY || '');
 let botContext: Context | null = null;
 
-// Расширенная система состояний
+// Расширим тип UserState
 type UserState =
   | { type: 'awaiting_start_date' }
   | { type: 'awaiting_end_date'; startDate: string }
+  | { type: 'awaiting_start_date_report_time' }
+  | { type: 'awaiting_end_date_report_time'; startDateReportTime: string }
   | { type: 'password' }
+  | { type: 'authenticated'; authenticatedAt: Date } // Новое состояние для аутентифицированных пользователей
   | null;
+
+// Добавим интерфейс для защищенных функций
+interface ProtectedHandler {
+  (ctx: Context): Promise<void>;
+}
+
+// Функция проверки доступа
+const checkAccess = async (ctx: Context): Promise<boolean> => {
+  if (!ctx.from) return false;
+
+  const userId = ctx.from.id;
+  const state = userStates[userId];
+
+  // Если пользователь уже аутентифицирован
+  if (state?.type === 'authenticated') {
+    // Проверяем, не истекла ли сессия (например, 5 минут)
+    const sessionTimeout = 5 * 60 * 1000; // 5 минут в миллисекундах
+    if (Date.now() - state.authenticatedAt.getTime() > sessionTimeout) {
+      userStates[userId] = null; // Сбрасываем сессию
+      return false;
+    }
+    return true;
+  }
+
+  return false;
+};
+
+// Декоратор для защищенных функций
+const withAccessCheck = (handler: ProtectedHandler): ProtectedHandler => {
+  return async (ctx: Context) => {
+    const hasAccess = await checkAccess(ctx);
+
+    if (!hasAccess) {
+      const userId = ctx.from?.id;
+      if (userId) {
+        userStates[userId] = { type: 'password' };
+      }
+
+      const backBtn = new InlineKeyboard()
+        .text('Вернуться в меню', 'menu')
+        .row();
+
+      await ctx.reply('Требуется авторизация. Введите пароль:', {
+        reply_markup: backBtn,
+      });
+      return;
+    }
+
+    await handler(ctx);
+  };
+};
+
+// Защищенные обработчики
+const protectedGenerate = withAccessCheck(async (ctx) => {
+  await updateAllFiled(ctx);
+  await updateIncomingCall(ctx);
+});
+
+const protectedReportTimeLastDay = withAccessCheck(async (ctx) => {
+  await createReportTimeByPeriod(ctx);
+  await updateAllFiled(ctx);
+  await updateIncomingCall(ctx);
+});
+
+const protectedReportTimePeriod = withAccessCheck(async (ctx) => {
+  if (!ctx.from) return;
+
+  const userId = ctx.from.id;
+  userStates[userId] = { type: 'awaiting_start_date_report_time' };
+
+  await ctx.reply(
+    'Введите НАЧАЛЬНУЮ дату периода в формате DD.MM.YYYY (например, 01.04.2025)',
+  );
+  await ctx.answerCallbackQuery();
+});
+
+const protectedSendGoogleLink = withAccessCheck(async (ctx) => {
+  try {
+    const userEmail = process.env.RECEIVER_EMAIL;
+    const googleSheetUrl = process.env.GOOGLE_SHEET_URL;
+
+    if (!userEmail || !googleSheetUrl) {
+      await ctx.reply('Email или ссылка не настроены в .env');
+      return;
+    }
+
+    await sendGoogleSheetLinkByEmail(userEmail, googleSheetUrl);
+    await ctx.reply('Ссылка на Google Таблицу отправлена на почту!');
+  } catch (err) {
+    console.error(err);
+    await ctx.reply(`Ошибка при отправке на почту: ${err}`);
+  }
+  await ctx.answerCallbackQuery();
+});
 
 const userStates: Record<number, UserState> = {};
 
@@ -62,35 +159,10 @@ const fnStartingCommand = async (ctx: Context) => {
 
 bot.command('start', fnStartingCommand);
 
-bot.callbackQuery('generate', async (ctx) => {
-  await updateAllFiled(ctx);
-  await updateIncomingCall(ctx);
-});
-
-bot.callbackQuery('report-time-last-day', async (ctx) => {
-  await createReportTimeToday(ctx);
-  await updateAllFiled(ctx);
-  await updateIncomingCall(ctx);
-});
-
-bot.callbackQuery('send-google-link', async (ctx) => {
-  try {
-    const userEmail = process.env.RECEIVER_EMAIL; // куда отправляем письмо
-    const googleSheetUrl = process.env.GOOGLE_SHEET_URL; // ссылка на гугл-таблицу
-
-    if (!userEmail || !googleSheetUrl) {
-      await ctx.reply('Email или ссылка не настроены в .env');
-      return;
-    }
-
-    await sendGoogleSheetLinkByEmail(userEmail, googleSheetUrl);
-    await ctx.reply('Ссылка на Google Таблицу отправлена на почту!');
-  } catch (err) {
-    console.error(err);
-    await ctx.reply(`Ошибка при отправке на почту: ${err}`);
-  }
-  await ctx.answerCallbackQuery();
-});
+bot.callbackQuery('generate', protectedGenerate);
+bot.callbackQuery('report-time-last-day', protectedReportTimeLastDay);
+bot.callbackQuery('report-time-period', protectedReportTimePeriod);
+bot.callbackQuery('send-google-link', protectedSendGoogleLink);
 
 bot.callbackQuery('report-lead-yesterday', async (ctx) => {
   const yesterday = new Date();
@@ -120,9 +192,19 @@ bot.callbackQuery('menu', fnStartingCommand);
 
 bot.callbackQuery('access-create-report', async (ctx) => {
   const userId = ctx.from.id;
-  userStates[userId] = { type: 'password' };
 
-  await ctx.reply('Введите пароль');
+  // Проверяем, не аутентифицирован ли уже пользователь
+  const hasAccess = await checkAccess(ctx);
+
+  if (hasAccess) {
+    await ctx.reply('Команды для руководства:', {
+      reply_markup: bossMenu,
+    });
+  } else {
+    userStates[userId] = { type: 'password' };
+    await ctx.reply('Введите пароль для доступа к командам руководства:');
+  }
+
   await ctx.answerCallbackQuery();
 });
 
@@ -136,7 +218,13 @@ bot.on('message:text', async (ctx) => {
 
   if (state.type === 'password') {
     if (userInput === process.env.BOSS_BTN_PASSWORD) {
-      await ctx.reply('Команды для руководства', {
+      // Устанавливаем состояние аутентификации
+      userStates[userId] = {
+        type: 'authenticated',
+        authenticatedAt: new Date(),
+      };
+
+      await ctx.reply('✅Команды для руководства:', {
         reply_markup: bossMenu,
       });
       return;
@@ -145,7 +233,7 @@ bot.on('message:text', async (ctx) => {
         .text('Вернуться в меню', 'menu')
         .row();
 
-      await ctx.reply('Неверный пароль', {
+      await ctx.reply('❌ Неверный пароль. Попробуйте еще раз:', {
         reply_markup: backBtn,
       });
       return;
@@ -160,7 +248,24 @@ bot.on('message:text', async (ctx) => {
     return;
   }
 
-  if (state.type === 'awaiting_start_date') {
+  if (state.type === 'awaiting_start_date_report_time') {
+    userStates[userId] = {
+      type: 'awaiting_end_date_report_time',
+      startDateReportTime: userInput,
+    };
+    await ctx.reply(
+      'Теперь введите КОНЕЧНУЮ дату периода в формате DD.MM.YYYY',
+    );
+  } else if (state.type === 'awaiting_end_date_report_time') {
+    const startDate = state.startDateReportTime;
+    const endDate = userInput;
+
+    userStates[userId] = null;
+
+    await createReportTimeByPeriod(ctx, startDate, endDate);
+    await updateAllFiled(ctx);
+    await updateIncomingCall(ctx);
+  } else if (state.type === 'awaiting_start_date') {
     userStates[userId] = {
       type: 'awaiting_end_date',
       startDate: userInput,
@@ -181,7 +286,7 @@ bot.on('message:text', async (ctx) => {
 //Ежедневное заполнение отчета в 23.50
 cron.schedule('50 23 * * *', async () => {
   console.log('Запуск ежедневного обновления...');
-  await createReportTimeToday(botContext).catch(console.error);
+  await createReportTimeByPeriod(botContext).catch(console.error);
   await updateAllFiled(botContext).catch(console.error);
   await updateIncomingCall(botContext).catch(console.error);
 });
