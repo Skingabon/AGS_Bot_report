@@ -277,7 +277,7 @@ bot.on('message:text', async (ctx) => {
     const startDate = state.startDateReportTime;
     const endDate = userInput;
 
-    userStates[userId] = null;
+    userStates[userId] = { type: 'authenticated', authenticatedAt: new Date() };
 
     await createReportTimeByPeriod(ctx, startDate, endDate);
     await updateAllFiled(ctx);
@@ -294,7 +294,7 @@ bot.on('message:text', async (ctx) => {
     const startDate = state.startDate;
     const endDate = userInput;
 
-    userStates[userId] = null;
+    userStates[userId] = { type: 'authenticated', authenticatedAt: new Date() };
 
     await showReportLeadByPeriod(ctx, startDate, endDate);
   } else if (state.type === 'awaiting_start_date_marketing') {
@@ -309,7 +309,7 @@ bot.on('message:text', async (ctx) => {
     const startDate = state.startDateMarketing;
     const endDate = userInput;
 
-    userStates[userId] = null;
+    userStates[userId] = { type: 'authenticated', authenticatedAt: new Date() };
 
     const response = await getReportLeadByPeriod(ctx, startDate, endDate);
     if (response) {

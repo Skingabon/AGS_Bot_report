@@ -631,7 +631,6 @@ export const getReportLeadByPeriod = async (
         result.countClosed++;
       }
     });
-    console.log(result.inProgress);
 
     return result;
   } catch (error) {
