@@ -19,7 +19,7 @@ export const getStatusLead = (lead: Lead): string => {
   if (lead.status_id === 73470054) {
     statusName = 'Отдел инжиниринга ';
   }
-
+  //TODO id: 67249714
   return statusName;
 };
 

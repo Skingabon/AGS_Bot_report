@@ -549,6 +549,100 @@ export const showReportLeadByPeriod = async (
   }
 };
 
+interface IResultLeadMarketing {
+  totalLeads: number;
+  countSeries: number;
+  countIng: number;
+  countClosed: number;
+  inProgress: number;
+  departmentIng: Lead[];
+  departmentSeries: Lead[];
+  pipelineSeries: 0;
+  pipelineIng: 0;
+}
+
+export const getReportLeadByPeriod = async (
+  ctx: Context,
+  startDate: string,
+  endDate?: string,
+): Promise<IResultLeadMarketing | undefined> => {
+  try {
+    let timeDate: number[];
+
+    if (endDate) {
+      timeDate = getPeriodTimestamps(startDate, endDate);
+    } else {
+      timeDate = getPeriodTimestamps(startDate);
+    }
+    const [startTimestamp, endTimestamp] = timeDate;
+
+    const response = await getLeadToday(startTimestamp, endTimestamp);
+    const result: IResultLeadMarketing = {
+      totalLeads: response.length,
+      inProgress: 0,
+      countSeries: 0,
+      countIng: 0,
+      pipelineSeries: 0,
+      pipelineIng: 0,
+      departmentIng: [],
+      departmentSeries: [],
+      countClosed: 0,
+    };
+    result.totalLeads = response.length;
+    response.map((lead) => {
+      // if (lead.pipeline_id !== 5716552) return;
+      if (lead.status_id === 50238949 && lead.pipeline_id === 5716552) {
+        result.inProgress++;
+      }
+      if (lead.status_id === 56123746 && lead.pipeline_id === 5716552) {
+        result.countSeries++;
+      }
+      if (lead.status_id === 73470054 && lead.pipeline_id === 5716552) {
+        result.countIng++;
+      }
+      // Воронка Серийное оборудование
+      if (lead.pipeline_id === 1049386) {
+        result.departmentSeries.push(lead);
+      }
+      // Воронка Инжиниринг
+      if (lead.pipeline_id === 5110132) {
+        result.departmentIng.push(lead);
+      }
+
+      // if (lead.status_id === 50238949 || lead.status_id === 50238952) {
+      //   // Новая заявка или взято в работу
+      //   result.notDistributed++;
+      // }
+      // if (!lead.custom_fields_values) return;
+      // lead.custom_fields_values.map((el) => {
+      //   if (el.field_id === 606679) {
+      //     // Серия
+      //     result.countSeries++;
+      //   }
+      //   if (el.field_id === 606681) {
+      //     // Инжиниринг
+      //     result.countIng++;
+      //   }
+      // });
+    });
+
+    [...result.departmentIng, ...result.departmentSeries].map((lead) => {
+      if (lead.status_id === 143) {
+        result.countClosed++;
+      }
+    });
+    console.log(result.inProgress);
+
+    return result;
+  } catch (error) {
+    if (error instanceof Error) {
+      await ctx.reply('Бот остановлен. Скорее всего сделок нет');
+
+      console.log('error' + error.message);
+    }
+  }
+};
+
 export const createReportTimeByPeriod = async (
   ctx: Context | null,
   startDate?: string,

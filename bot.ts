@@ -3,6 +3,7 @@ import cron from 'node-cron';
 import { Bot, Context, InlineKeyboard } from 'grammy';
 import {
   createReportTimeByPeriod,
+  getReportLeadByPeriod,
   showReportLeadByPeriod,
   showReportLeadByYesterday,
   updateAllFiled,
@@ -19,9 +20,13 @@ type UserState =
   | { type: 'awaiting_end_date'; startDate: string }
   | { type: 'awaiting_start_date_report_time' }
   | { type: 'awaiting_end_date_report_time'; startDateReportTime: string }
+  | { type: 'awaiting_start_date_marketing' }
+  | { type: 'awaiting_end_date_marketing'; startDateMarketing: string }
   | { type: 'password' }
   | { type: 'authenticated'; authenticatedAt: Date } // Новое состояние для аутентифицированных пользователей
   | null;
+
+const userStates: Record<number, UserState> = {};
 
 // Добавим интерфейс для защищенных функций
 interface ProtectedHandler {
@@ -117,7 +122,17 @@ const protectedSendGoogleLink = withAccessCheck(async (ctx) => {
   await ctx.answerCallbackQuery();
 });
 
-const userStates: Record<number, UserState> = {};
+const protectedReportMarketing = withAccessCheck(async (ctx) => {
+  if (!ctx.from) return;
+
+  const userId = ctx.from.id;
+  userStates[userId] = { type: 'awaiting_start_date_marketing' };
+
+  await ctx.reply(
+    'Введите НАЧАЛЬНУЮ дату периода в формате DD.MM.YYYY (например, 01.04.2025)',
+  );
+  await ctx.answerCallbackQuery();
+});
 
 bot.api.setMyCommands([
   { command: 'start', description: 'Start AGS_Bot_Report' },
@@ -125,7 +140,6 @@ bot.api.setMyCommands([
 
 const menuKeyboard = new InlineKeyboard()
   .text('Для руководства', 'access-create-report')
-  .row()
   .row()
   .text('Отчет по сделкам за вчерашний день', 'report-lead-yesterday')
   .row()
@@ -135,6 +149,8 @@ const menuKeyboard = new InlineKeyboard()
   .row();
 
 const bossMenu = new InlineKeyboard()
+  .text('Маркетинг', 'report-marketing-period')
+  .row()
   .text('Создать отчет за последний день', 'report-time-last-day')
   .row()
   .text('Создать отчет за выбранный период', 'report-time-period')
@@ -163,6 +179,7 @@ bot.callbackQuery('generate', protectedGenerate);
 bot.callbackQuery('report-time-last-day', protectedReportTimeLastDay);
 bot.callbackQuery('report-time-period', protectedReportTimePeriod);
 bot.callbackQuery('send-google-link', protectedSendGoogleLink);
+bot.callbackQuery('report-marketing-period', protectedReportMarketing);
 
 bot.callbackQuery('report-lead-yesterday', async (ctx) => {
   const yesterday = new Date();
@@ -280,6 +297,44 @@ bot.on('message:text', async (ctx) => {
     userStates[userId] = null;
 
     await showReportLeadByPeriod(ctx, startDate, endDate);
+  } else if (state.type === 'awaiting_start_date_marketing') {
+    userStates[userId] = {
+      type: 'awaiting_end_date_marketing',
+      startDateMarketing: userInput,
+    };
+    await ctx.reply(
+      'Теперь введите КОНЕЧНУЮ дату периода в формате DD.MM.YYYY',
+    );
+  } else if (state.type === 'awaiting_end_date_marketing') {
+    const startDate = state.startDateMarketing;
+    const endDate = userInput;
+
+    userStates[userId] = null;
+
+    const response = await getReportLeadByPeriod(ctx, startDate, endDate);
+    if (response) {
+      const {
+        inProgress,
+        countIng,
+        countSeries,
+        countClosed,
+        pipelineSeries,
+        pipelineIng,
+      } = response;
+      // const period = !endDate ? 'сегодня' : `период: ${startDate}-${endDate}`;
+
+      const periodOutput = `Отчет за период: ${startDate}-${endDate}`;
+      await ctx.reply(
+        `${periodOutput}
+1. Лид: <b>${inProgress}</b>
+2. Квалифицировано: <b>${countIng + countSeries}</b>
+3. В работе: <b>${pipelineSeries + pipelineIng}</b>
+4. Закрыто и нереализовано: <b>${countClosed}</b>`,
+        {
+          parse_mode: 'HTML',
+        },
+      );
+    }
   }
 });
 
