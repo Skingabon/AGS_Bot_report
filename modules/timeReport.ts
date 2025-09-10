@@ -159,111 +159,114 @@ export const updateIncomingCall = async (ctx: Context | null) => {
         const idx = i + j;
         const rowNumber = idx + 2; // +2 для учета заголовка
         const firstTouch = firstActionFromTable[rowNumber];
-        // TODO
-        if (firstTouch !== 'Мы не ответили') continue;
+        if (
+          firstTouch === 'Мы не ответили' ||
+          firstTouch === '-' ||
+          !firstTouch
+        ) {
+          try {
+            const idLead = Number(batch[j]);
+            const lead = await getLeadById(idLead);
+            const incomingAction =
+              await getCreatedAtIncomingCallOrMessage(lead);
+            if (!incomingAction) {
+              sheetUpdates.push({
+                range: `T${rowNumber}:V${rowNumber}`,
+                values: [['Мы не ответили', '-', '-']],
+              });
+              continue;
+            }
 
-        try {
-          const idLead = Number(batch[j]);
-          const lead = await getLeadById(idLead);
-          const incomingAction = await getCreatedAtIncomingCallOrMessage(lead);
+            if (
+              isInvalidDateIncoming({
+                createAtLead: lead.created_at,
+                createAtIncoming: incomingAction.time,
+              })
+            ) {
+              sheetUpdates.push({
+                range: `T${rowNumber}:V${rowNumber}`,
+                values: [['Старый лид', '-', '-']],
+              });
+              continue;
+            }
 
-          if (!incomingAction) {
-            sheetUpdates.push({
-              range: `T${rowNumber}:V${rowNumber}`,
-              values: [['Мы не ответили', '-', '-']],
-            });
-            continue;
-          }
+            // Обработка данных
+            const fields = lead.custom_fields_values || [];
+            let timeAllWork = '-';
+            const createdAtFormatted = formatDate(lead.created_at);
+            const dateSaveCreatedAt = safeParseDate(createdAtFormatted);
+            const incomingDate = safeParseDate(getDate(incomingAction.time));
 
-          if (
-            isInvalidDateIncoming({
-              createAtLead: lead.created_at,
-              createAtIncoming: incomingAction.time,
-            })
-          ) {
-            sheetUpdates.push({
-              range: `T${rowNumber}:V${rowNumber}`,
-              values: [['Старый лид', '-', '-']],
-            });
-            continue;
-          }
-
-          // Обработка данных
-          const fields = lead.custom_fields_values || [];
-          let timeAllWork = '-';
-          const createdAtFormatted = formatDate(lead.created_at);
-          const dateSaveCreatedAt = safeParseDate(createdAtFormatted);
-          const incomingDate = safeParseDate(getDate(incomingAction.time));
-
-          if (incomingDate && dateSaveCreatedAt) {
-            timeAllWork = formatDiff(
-              incomingDate.getTime() - dateSaveCreatedAt.getTime(),
-            );
-          }
-
-          let deltaTimeFirstResponse = '';
-          const omAssignedAt = formatDate(
-            getFieldValue(fields, 'Время ОМ квал серия'),
-          );
-          const omRaspredByIngTime = formatDate(
-            getFieldValue(fields, 'Время Распр ОМ квал ИНЖ'),
-          );
-
-          const assignedAtDate = omAssignedAt
-            ? parseCustomDate(omAssignedAt)
-            : null;
-          const raspredIngAtDate = omRaspredByIngTime
-            ? parseCustomDate(omRaspredByIngTime)
-            : null;
-          const omAssignedBy = getFieldValue(fields, 'ОМ Квал серия') || '';
-
-          if (incomingDate) {
-            if (omAssignedBy && assignedAtDate) {
-              deltaTimeFirstResponse = formatDiff(
-                incomingDate.getTime() - assignedAtDate.getTime(),
-              );
-            } else if (!omAssignedBy && raspredIngAtDate) {
-              deltaTimeFirstResponse = formatDiff(
-                incomingDate.getTime() - raspredIngAtDate.getTime(),
+            if (incomingDate && dateSaveCreatedAt) {
+              timeAllWork = formatDiff(
+                incomingDate.getTime() - dateSaveCreatedAt.getTime(),
               );
             }
-          }
 
-          // Добавляем обновления
-          sheetUpdates.push({
-            range: `T${rowNumber}:V${rowNumber}`,
-            values: [
-              [
-                `${getDate(incomingAction.time)} / ${incomingAction.source}`,
-                deltaTimeFirstResponse,
-                timeAllWork,
-              ],
-            ],
-          });
-
-          // Добавляем обновление в AMO
-          amoUpdatesPromises.push(
-            updateLeadDateCall(idLead, getDate(incomingAction.time)),
-          );
-
-          processedCount++;
-
-          // // Отправляем промежуточный отчет каждые 100 обработанных лидов
-          // if (processedCount % 100 === 0) {
-          //   await ctx.reply(
-          //     `Доб ${processedCount} из ${idsLead.length} лидов...`,
-          //   );
-          // }
-        } catch (err) {
-          const rowNumber = idx + 2;
-          sheetUpdates.push({
-            range: `T${rowNumber}:V${rowNumber}`,
-            values: [['Ошибка обработки', '-', '-']],
-          });
-          if (err instanceof Error) {
-            console.log(
-              `Ошибка при обработке лида ${batch[j]}: ${err.message}`,
+            let deltaTimeFirstResponse = '';
+            const omAssignedAt = formatDate(
+              getFieldValue(fields, 'Время ОМ квал серия'),
             );
+            const omRaspredByIngTime = formatDate(
+              getFieldValue(fields, 'Время Распр ОМ квал ИНЖ'),
+            );
+
+            const assignedAtDate = omAssignedAt
+              ? parseCustomDate(omAssignedAt)
+              : null;
+            const raspredIngAtDate = omRaspredByIngTime
+              ? parseCustomDate(omRaspredByIngTime)
+              : null;
+            const omAssignedBy = getFieldValue(fields, 'ОМ Квал серия') || '';
+
+            if (incomingDate) {
+              if (omAssignedBy && assignedAtDate) {
+                deltaTimeFirstResponse = formatDiff(
+                  incomingDate.getTime() - assignedAtDate.getTime(),
+                );
+              } else if (!omAssignedBy && raspredIngAtDate) {
+                deltaTimeFirstResponse = formatDiff(
+                  incomingDate.getTime() - raspredIngAtDate.getTime(),
+                );
+              }
+            }
+
+            // Добавляем обновления
+            sheetUpdates.push({
+              range: `T${rowNumber}:V${rowNumber}`,
+              values: [
+                [
+                  `${getDate(incomingAction.time)} / ${incomingAction.source}`,
+                  deltaTimeFirstResponse,
+                  timeAllWork,
+                ],
+              ],
+            });
+
+            // Добавляем обновление в AMO
+            amoUpdatesPromises.push(
+              updateLeadDateCall(idLead, getDate(incomingAction.time)),
+            );
+
+            processedCount++;
+
+            // // Отправляем промежуточный отчет каждые 100 обработанных лидов
+            // if (processedCount % 100 === 0) {
+            //   await ctx.reply(
+            //     `Доб ${processedCount} из ${idsLead.length} лидов...`,
+            //   );
+            // }
+          } catch (err) {
+            const rowNumber = idx + 2;
+            sheetUpdates.push({
+              range: `T${rowNumber}:V${rowNumber}`,
+              values: [['Ошибка обработки', '-', '-']],
+            });
+            if (err instanceof Error) {
+              console.log(
+                `Ошибка при обработке лида ${batch[j]}: ${err.message}`,
+              );
+            }
           }
         }
       }
