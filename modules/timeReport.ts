@@ -139,6 +139,7 @@ export const updateIncomingCall = async (ctx: Context | null) => {
     // Получаем данные из таблицы
     const idsLead = (await getGoogleSheetData('A')).flat();
     const firstActionFromTable = (await getGoogleSheetData('T')).flat();
+    const stageFromTable = (await getGoogleSheetData('E')).flat();
 
     // Подготавливаем данные для пакетного обновления
     const sheetUpdates: {
@@ -158,7 +159,16 @@ export const updateIncomingCall = async (ctx: Context | null) => {
       for (let j = 0; j < batch.length; j++) {
         const idx = i + j;
         const rowNumber = idx + 2; // +2 для учета заголовка
-        const firstTouch = firstActionFromTable[rowNumber];
+        const firstTouch = firstActionFromTable[idx];
+        const stageLead = stageFromTable[idx];
+
+        if (stageLead === 'Закрыто и не реализовано' || !stageLead) {
+          sheetUpdates.push({
+            range: `T${rowNumber}:V${rowNumber}`,
+            values: [['Не актуально', '-', '-']],
+          });
+          continue;
+        }
         if (
           firstTouch === 'Мы не ответили' ||
           firstTouch === '-' ||
@@ -249,13 +259,6 @@ export const updateIncomingCall = async (ctx: Context | null) => {
             );
 
             processedCount++;
-
-            // // Отправляем промежуточный отчет каждые 100 обработанных лидов
-            // if (processedCount % 100 === 0) {
-            //   await ctx.reply(
-            //     `Доб ${processedCount} из ${idsLead.length} лидов...`,
-            //   );
-            // }
           } catch (err) {
             const rowNumber = idx + 2;
             sheetUpdates.push({
