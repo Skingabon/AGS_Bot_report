@@ -148,144 +148,185 @@ export const updateIncomingCall = async (ctx: Context | null) => {
     }[] = [];
 
     const amoUpdatesPromises: Promise<void>[] = [];
-    const batchSize = 50; // Размер пакета для обработки
+    const batchSize = 50;
     let processedCount = 0;
+    let skippedCount = 0;
 
     // Обрабатываем лиды пакетами
     for (let i = 0; i < idsLead.length; i += batchSize) {
       const batch = idsLead.slice(i, i + batchSize);
 
-      // Обрабатываем текущий пакет
       for (let j = 0; j < batch.length; j++) {
         const idx = i + j;
-        const rowNumber = idx + 2; // +2 для учета заголовка
+        const rowNumber = idx + 2;
         const firstTouch = firstActionFromTable[idx];
         const stageLead = stageFromTable[idx];
 
-        if (stageLead === 'Закрыто и не реализовано' || !stageLead) {
+        // // ДЕБАГ: логируем текущую строку
+        // console.log(
+        //   `Строка ${rowNumber}: ID=${idsLead[idx]}, Статус="${stageLead}", Первое касание="${firstTouch}"`,
+        // );
+
+        // 1. Пропускаем если статус "Закрыто и не реализовано" или пустой
+        if (
+          stageLead === 'Закрыто и не реализовано' ||
+          !stageLead ||
+          stageLead.trim() === ''
+        ) {
           sheetUpdates.push({
             range: `T${rowNumber}:V${rowNumber}`,
             values: [['Не актуально', '-', '-']],
           });
+          skippedCount++;
           continue;
         }
-        if (
-          firstTouch === 'Мы не ответили' ||
-          firstTouch === '-' ||
-          !firstTouch
-        ) {
-          try {
-            const idLead = Number(batch[j]);
-            const lead = await getLeadById(idLead);
-            const incomingAction =
-              await getCreatedAtIncomingCallOrMessage(lead);
-            if (!incomingAction) {
-              sheetUpdates.push({
-                range: `T${rowNumber}:V${rowNumber}`,
-                values: [['Мы не ответили', '-', '-']],
-              });
-              continue;
-            }
 
-            if (
-              isInvalidDateIncoming({
-                createAtLead: lead.created_at,
-                createAtIncoming: incomingAction.time,
-              })
-            ) {
-              sheetUpdates.push({
-                range: `T${rowNumber}:V${rowNumber}`,
-                values: [['Старый лид', '-', '-']],
-              });
-              continue;
-            }
+        // 2. Пропускаем если УЖЕ ЕСТЬ данные о первом касании (кроме определенных значений)
+        const shouldProcessFirstTouch =
+          !firstTouch ||
+          firstTouch.trim() === '' ||
+          firstTouch === 'Не актуально' ||
+          firstTouch === 'Старый лид' ||
+          firstTouch === 'Ошибка обработки' ||
+          firstTouch === 'Лид не найден' ||
+          firstTouch === 'Неверный ID';
 
-            // Обработка данных
-            const fields = lead.custom_fields_values || [];
-            let timeAllWork = '-';
-            const createdAtFormatted = formatDate(lead.created_at);
-            const dateSaveCreatedAt = safeParseDate(createdAtFormatted);
-            const incomingDate = safeParseDate(getDate(incomingAction.time));
+        if (!shouldProcessFirstTouch) {
+          // Если уже есть нормальные данные - пропускаем
+          // console.log(
+          //   `Пропускаем строку ${rowNumber} - уже есть данные: "${firstTouch}"`,
+          // );
+          skippedCount++;
+          continue;
+        }
 
-            if (incomingDate && dateSaveCreatedAt) {
-              timeAllWork = formatDiff(
-                incomingDate.getTime() - dateSaveCreatedAt.getTime(),
-              );
-            }
+        try {
+          const idLead = Number(batch[j]);
 
-            let deltaTimeFirstResponse = '';
-            const omAssignedAt = formatDate(
-              getFieldValue(fields, 'Время ОМ квал серия'),
-            );
-            const omRaspredByIngTime = formatDate(
-              getFieldValue(fields, 'Время Распр ОМ квал ИНЖ'),
-            );
-
-            const assignedAtDate = omAssignedAt
-              ? parseCustomDate(omAssignedAt)
-              : null;
-            const raspredIngAtDate = omRaspredByIngTime
-              ? parseCustomDate(omRaspredByIngTime)
-              : null;
-            const omAssignedBy = getFieldValue(fields, 'ОМ Квал серия') || '';
-
-            if (incomingDate) {
-              if (omAssignedBy && assignedAtDate) {
-                deltaTimeFirstResponse = formatDiff(
-                  incomingDate.getTime() - assignedAtDate.getTime(),
-                );
-              } else if (!omAssignedBy && raspredIngAtDate) {
-                deltaTimeFirstResponse = formatDiff(
-                  incomingDate.getTime() - raspredIngAtDate.getTime(),
-                );
-              }
-            }
-
-            // Добавляем обновления
+          // Проверка валидности ID
+          if (isNaN(idLead) || idLead === 0) {
             sheetUpdates.push({
               range: `T${rowNumber}:V${rowNumber}`,
-              values: [
-                [
-                  `${getDate(incomingAction.time)} / ${incomingAction.source}`,
-                  deltaTimeFirstResponse,
-                  timeAllWork,
-                ],
+              values: [['Неверный ID', '-', '-']],
+            });
+            continue;
+          }
+
+          const lead = await getLeadById(idLead);
+
+          if (!lead) {
+            sheetUpdates.push({
+              range: `T${rowNumber}:V${rowNumber}`,
+              values: [['Лид не найден', '-', '-']],
+            });
+            continue;
+          }
+
+          const incomingAction = await getCreatedAtIncomingCallOrMessage(lead);
+
+          if (!incomingAction) {
+            sheetUpdates.push({
+              range: `T${rowNumber}:V${rowNumber}`,
+              values: [['Мы не ответили', '-', '-']],
+            });
+            continue;
+          }
+
+          if (
+            isInvalidDateIncoming({
+              createAtLead: lead.created_at,
+              createAtIncoming: incomingAction.time,
+            })
+          ) {
+            sheetUpdates.push({
+              range: `T${rowNumber}:V${rowNumber}`,
+              values: [['Старый лид', '-', '-']],
+            });
+            continue;
+          }
+
+          // Обработка данных...
+          const fields = lead.custom_fields_values || [];
+          let timeAllWork = '-';
+          const createdAtFormatted = formatDate(lead.created_at);
+          const dateSaveCreatedAt = safeParseDate(createdAtFormatted);
+          const incomingDate = safeParseDate(getDate(incomingAction.time));
+
+          if (incomingDate && dateSaveCreatedAt) {
+            timeAllWork = formatDiff(
+              incomingDate.getTime() - dateSaveCreatedAt.getTime(),
+            );
+          }
+
+          let deltaTimeFirstResponse = '';
+          const omAssignedAt = formatDate(
+            getFieldValue(fields, 'Время ОМ квал серия'),
+          );
+          const omRaspredByIngTime = formatDate(
+            getFieldValue(fields, 'Время Распр ОМ квал ИНЖ'),
+          );
+
+          const assignedAtDate = omAssignedAt
+            ? parseCustomDate(omAssignedAt)
+            : null;
+          const raspredIngAtDate = omRaspredByIngTime
+            ? parseCustomDate(omRaspredByIngTime)
+            : null;
+          const omAssignedBy = getFieldValue(fields, 'ОМ Квал серия') || '';
+
+          if (incomingDate) {
+            if (omAssignedBy && assignedAtDate) {
+              deltaTimeFirstResponse = formatDiff(
+                incomingDate.getTime() - assignedAtDate.getTime(),
+              );
+            } else if (!omAssignedBy && raspredIngAtDate) {
+              deltaTimeFirstResponse = formatDiff(
+                incomingDate.getTime() - raspredIngAtDate.getTime(),
+              );
+            }
+          }
+
+          // Добавляем обновления
+          sheetUpdates.push({
+            range: `T${rowNumber}:V${rowNumber}`,
+            values: [
+              [
+                `${getDate(incomingAction.time)} / ${incomingAction.source}`,
+                deltaTimeFirstResponse,
+                timeAllWork,
               ],
-            });
+            ],
+          });
 
-            // Добавляем обновление в AMO
-            amoUpdatesPromises.push(
-              updateLeadDateCall(idLead, getDate(incomingAction.time)),
+          amoUpdatesPromises.push(
+            updateLeadDateCall(idLead, getDate(incomingAction.time)),
+          );
+
+          processedCount++;
+        } catch (err) {
+          sheetUpdates.push({
+            range: `T${rowNumber}:V${rowNumber}`,
+            values: [['Ошибка обработки', '-', '-']],
+          });
+          if (err instanceof Error) {
+            console.log(
+              `Ошибка при обработке лида ${batch[j]}: ${err.message}`,
             );
-
-            processedCount++;
-          } catch (err) {
-            const rowNumber = idx + 2;
-            sheetUpdates.push({
-              range: `T${rowNumber}:V${rowNumber}`,
-              values: [['Ошибка обработки', '-', '-']],
-            });
-            if (err instanceof Error) {
-              console.log(
-                `Ошибка при обработке лида ${batch[j]}: ${err.message}`,
-              );
-            }
           }
         }
       }
 
-      // Пакетное обновление Google Sheets для текущего пакета
+      // Пакетное обновление
       if (sheetUpdates.length > 0) {
         await updateFieldsGooglePack(sheetUpdates);
-        sheetUpdates.length = 0; // Очищаем массив после обновления
+        sheetUpdates.length = 0;
       }
     }
 
-    // Обновляем данные в AMO пакетно
     await Promise.all(amoUpdatesPromises);
 
     await ctx.reply(
-      `Готово! Обработано ${processedCount} лидов. ${getCurrentTime()}`,
+      `Готово! Обработано: ${processedCount}, Пропущено: ${skippedCount}, Всего: ${idsLead.length}. ${getCurrentTime()}`,
     );
   } catch (err) {
     if (err instanceof Error) {
@@ -321,21 +362,52 @@ export const updateAllFiled = async (ctx: Context | null) => {
       {},
     );
 
-    const batchSize = 50; // Размер пакета для обработки
+    const batchSize = 50;
     let processedCount = 0;
+    let notFoundCount = 0;
+    let errorCount = 0;
 
     // Обрабатываем лиды пакетами
     for (let i = 0; i < idsLead.length; i += batchSize) {
       const batch = idsLead.slice(i, i + batchSize);
 
-      // Обрабатываем текущий пакет
       for (let j = 0; j < batch.length; j++) {
         const idx = i + j;
-        const rowNumber = idx + 2; // +2 для учета заголовка
+        const rowNumber = idx + 2;
 
         try {
           const idLead = Number(batch[j]);
+
+          // Проверяем валидность ID
+          if (isNaN(idLead) || idLead === 0) {
+            sheetUpdates.push({
+              range: `E${rowNumber}:S${rowNumber}`,
+              values: [Array(15).fill('Неверный ID')],
+            });
+            sheetUpdates.push({
+              range: `W${rowNumber}:AB${rowNumber}`,
+              values: [Array(6).fill('Неверный ID')],
+            });
+            errorCount++;
+            continue;
+          }
+
           const lead = await getLeadById(idLead);
+
+          // Обрабатываем случай когда сделка не найдена (204 No Content)
+          if (!lead) {
+            sheetUpdates.push({
+              range: `E${rowNumber}:S${rowNumber}`,
+              values: [Array(15).fill('Сделка не найдена')],
+            });
+            sheetUpdates.push({
+              range: `W${rowNumber}:AB${rowNumber}`,
+              values: [Array(6).fill('Сделка не найдена')],
+            });
+            notFoundCount++;
+            continue;
+          }
+
           const {
             statusName,
             pipelineName,
@@ -382,6 +454,7 @@ export const updateAllFiled = async (ctx: Context | null) => {
               ],
             ],
           });
+
           sheetUpdates.push({
             range: `W${rowNumber}:AB${rowNumber}`,
             values: [
@@ -398,29 +471,43 @@ export const updateAllFiled = async (ctx: Context | null) => {
 
           processedCount++;
         } catch (err) {
+          errorCount++;
           if (err instanceof Error) {
             console.log(
               `Ошибка при обработке лида ${batch[j]}: ${err.message}`,
             );
+
+            // Записываем ошибку в таблицу
+            sheetUpdates.push({
+              range: `E${rowNumber}:S${rowNumber}`,
+              values: [Array(15).fill('Ошибка обработки')],
+            });
+            sheetUpdates.push({
+              range: `W${rowNumber}:AB${rowNumber}`,
+              values: [Array(6).fill('Ошибка обработки')],
+            });
           }
         }
       }
 
-      // Пакетное обновление Google Sheets для текущего пакета
+      // Пакетное обновление
       if (sheetUpdates.length > 0) {
-        await updateFieldsGooglePack(sheetUpdates);
-        sheetUpdates.length = 0; // Очищаем массив после обновления
+        try {
+          await updateFieldsGooglePack(sheetUpdates);
+          sheetUpdates.length = 0;
+        } catch (updateError) {
+          console.error('Ошибка при обновлении Google Sheets:', updateError);
+          // Не очищаем sheetUpdates, попробуем еще раз в следующем пакете
+        }
       }
     }
 
-    // Обновляем данные в AMO пакетно
     await ctx.reply(
-      `Готово! Обработано ${processedCount} лидов. ${getCurrentTime()}`,
+      `Готово! Обработано: ${processedCount}, Не найдено: ${notFoundCount}, Ошибок: ${errorCount}, Всего: ${idsLead.length}. ${getCurrentTime()}`,
     );
   } catch (error) {
     if (error instanceof Error) {
-      await ctx.reply('Бот остановлен. Скорее всего сделок нет');
-
+      await ctx.reply(`Критическая ошибка: ${error.message}`);
       console.log('error' + error.message);
     }
   }
@@ -695,7 +782,7 @@ export const createReportTimeByPeriod = async (
 
     const response = await getLeadToday(startTimestamp, endTimestamp);
 
-    await ctx.reply('Собрал все сделки за сегодняшний день');
+    await ctx.reply('Собрал все сделки за выбранный преиод');
 
     let leads = response;
     if (!leads || leads.length === 0) {

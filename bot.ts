@@ -188,13 +188,11 @@ bot.callbackQuery('report-lead-yesterday', async (ctx) => {
   await showReportLeadByYesterday(ctx, yesterdayDate);
   await ctx.answerCallbackQuery();
 });
-
 bot.callbackQuery('report-lead-today', async (ctx) => {
   const currentDate = new Date().toLocaleDateString('ru-RU');
   await showReportLeadByPeriod(ctx, currentDate);
   await ctx.answerCallbackQuery();
 });
-
 bot.callbackQuery('report-lead-period', async (ctx) => {
   const userId = ctx.from.id;
   userStates[userId] = { type: 'awaiting_start_date' };
@@ -204,9 +202,7 @@ bot.callbackQuery('report-lead-period', async (ctx) => {
   );
   await ctx.answerCallbackQuery();
 });
-
 bot.callbackQuery('menu', fnStartingCommand);
-
 bot.callbackQuery('access-create-report', async (ctx) => {
   const userId = ctx.from.id;
 
@@ -338,8 +334,8 @@ bot.on('message:text', async (ctx) => {
   }
 });
 
-//Ежедневное заполнение отчета в 23.50
-cron.schedule('50 23 * * *', async () => {
+//Ежедневное заполнение отчета в 23.40
+cron.schedule('40 23 * * *', async () => {
   console.log('Запуск ежедневного обновления...');
   await createReportTimeByPeriod(botContext).catch(console.error);
   await updateAllFiled(botContext).catch(console.error);

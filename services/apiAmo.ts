@@ -118,14 +118,28 @@ export async function getLeadToday(
   }
 }
 
-export async function getLeadById(id: number): Promise<Lead> {
-  const response = await fetch(`${apiUrl}/${id}`, {
-    headers: {
-      Authorization: `Bearer ${TOKEN}`,
-    },
-  });
-  const res = await response.json();
-  return res;
+export async function getLeadById(id: number): Promise<Lead | null> {
+  try {
+    const response = await fetch(`${apiUrl}/${id}`, {
+      headers: {
+        Authorization: `Bearer ${TOKEN}`,
+      },
+    });
+    if (response.status === 204) {
+      // Сделка не найдена или удалена
+      return null;
+    }
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error(`Error fetching lead ${id}:`, error);
+    return null;
+  }
 }
 
 interface IGetContactsBtIdLeadProps {
