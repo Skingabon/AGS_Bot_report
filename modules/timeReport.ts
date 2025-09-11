@@ -189,6 +189,7 @@ export const updateIncomingCall = async (ctx: Context | null) => {
           firstTouch === 'Старый лид' ||
           firstTouch === 'Ошибка обработки' ||
           firstTouch === 'Лид не найден' ||
+          firstTouch === '-' ||
           firstTouch === 'Неверный ID';
 
         if (!shouldProcessFirstTouch) {
