@@ -311,24 +311,19 @@ bot.on('message:text', async (ctx) => {
     if (response) {
       const {
         inProgress,
-        countIng,
-        countSeries,
+        countActiveLead,
         countClosed,
-        pipelineSeries,
-        pipelineIng,
+        pipelinesSeriesIng,
+        totalLeads,
       } = response;
-      // const period = !endDate ? 'сегодня' : `период: ${startDate}-${endDate}`;
 
-      const periodOutput = `Отчет за период: ${startDate}-${endDate}`;
       await ctx.reply(
-        `${periodOutput}
-1. Лид: <b>${inProgress}</b>
-2. Квалифицировано: <b>${countIng + countSeries}</b>
-3. В работе: <b>${pipelineSeries + pipelineIng}</b>
-4. Закрыто и нереализовано: <b>${countClosed}</b>`,
-        {
-          parse_mode: 'HTML',
-        },
+        `Отчет за период готов! Найдено сделок: ${totalLeads}\n
+         1. Лид: ${countActiveLead}\n 
+         2. Квалифицировано: ${pipelinesSeriesIng}, \n
+         3. Закрыто и нереализовано: ${countClosed}\n 
+         4. В работе: ${inProgress} \n
+         5. Качественные: ${pipelinesSeriesIng - countClosed}`,
       );
     }
   }

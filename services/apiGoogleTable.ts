@@ -46,6 +46,23 @@ export async function getGoogleSheetData(
   return response.data.values || [];
 }
 
+export async function getRangeValues(range: string): Promise<Array<string[]>> {
+  const sheets = google.sheets({ version: 'v4', auth });
+
+  try {
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${SHEET_NAME}!${range}`,
+      valueRenderOption: 'FORMATTED_VALUE',
+    });
+
+    return response.data.values || [];
+  } catch (error) {
+    console.error(`Ошибка получения диапазона ${range}:`, error);
+    return [];
+  }
+}
+
 export async function updateGoogleField(
   data: string,
   index: number,

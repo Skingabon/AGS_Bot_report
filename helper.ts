@@ -150,3 +150,22 @@ export const formatDateByPeriod = (inputDate: string): string => {
   // Возвращаем дату в нужном формате
   return `${formattedYear}-${formattedMonth}-${formattedDay}T00:00:00`;
 };
+
+export function convertDateFormat(dateString: string): string | null {
+  // Проверяем, соответствует ли строка ожидаемому формату YYYY.MM.DD
+  const regex = /^(\d{4})\.(\d{2})\.(\d{2})$/;
+  const match = dateString.match(regex);
+
+  if (!match) {
+    console.log('Неверный формат даты. Ожидается: YYYY.MM.DD');
+    return null;
+  }
+
+  // Извлекаем компоненты даты
+  const year = match[1];
+  const month = match[2];
+  const day = match[3];
+
+  // Формируем новую дату в формате DD.MM.YYYY
+  return `${day}.${month}.${year}`;
+}

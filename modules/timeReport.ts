@@ -12,9 +12,11 @@ import {
 import {
   createGoogleFields,
   getGoogleSheetData,
+  getRangeValues,
   updateFieldsGooglePack,
 } from '../services/apiGoogleTable';
 import {
+  convertDateFormat,
   formatDate,
   formatDateByPeriod,
   formatDiff,
@@ -645,14 +647,10 @@ export const showReportLeadByPeriod = async (
 
 interface IResultLeadMarketing {
   totalLeads: number;
-  countSeries: number;
-  countIng: number;
+  countActiveLead: number;
   countClosed: number;
   inProgress: number;
-  departmentIng: Lead[];
-  departmentSeries: Lead[];
-  pipelineSeries: 0;
-  pipelineIng: 0;
+  pipelinesSeriesIng: number;
 }
 
 export const getReportLeadByPeriod = async (
@@ -661,78 +659,78 @@ export const getReportLeadByPeriod = async (
   endDate?: string,
 ): Promise<IResultLeadMarketing | undefined> => {
   try {
-    let timeDate: number[];
+    const timeDate = endDate
+      ? getPeriodTimestamps(startDate, endDate)
+      : getPeriodTimestamps(startDate);
 
-    if (endDate) {
-      timeDate = getPeriodTimestamps(startDate, endDate);
-    } else {
-      timeDate = getPeriodTimestamps(startDate);
-    }
-    const [startTimestamp, endTimestamp] = timeDate;
+    const [startInputDate, endInputDate] = timeDate;
 
-    const response = await getLeadToday(startTimestamp, endTimestamp);
+    // Получаем ВСЕ данные одним запросом - это ключевое!
+    const rowLength = (await getGoogleSheetData('A')).flat().length;
+    const allData = await getRangeValues(`A2:AK${rowLength}`);
+
     const result: IResultLeadMarketing = {
-      totalLeads: response.length,
+      totalLeads: 0,
+      countActiveLead: 0,
       inProgress: 0,
-      countSeries: 0,
-      countIng: 0,
-      pipelineSeries: 0,
-      pipelineIng: 0,
-      departmentIng: [],
-      departmentSeries: [],
+      pipelinesSeriesIng: 0,
       countClosed: 0,
     };
-    result.totalLeads = response.length;
-    response.map((lead) => {
-      // if (lead.pipeline_id !== 5716552) return;
-      if (lead.status_id === 50238949 && lead.pipeline_id === 5716552) {
-        result.inProgress++;
-      }
-      if (lead.status_id === 56123746 && lead.pipeline_id === 5716552) {
-        result.countSeries++;
-      }
-      if (lead.status_id === 73470054 && lead.pipeline_id === 5716552) {
-        result.countIng++;
-      }
-      // Воронка Серийное оборудование
-      if (lead.pipeline_id === 1049386) {
-        result.departmentSeries.push(lead);
-      }
-      // Воронка Инжиниринг
-      if (lead.pipeline_id === 5110132) {
-        result.departmentIng.push(lead);
-      }
 
-      // if (lead.status_id === 50238949 || lead.status_id === 50238952) {
-      //   // Новая заявка или взято в работу
-      //   result.notDistributed++;
-      // }
-      // if (!lead.custom_fields_values) return;
-      // lead.custom_fields_values.map((el) => {
-      //   if (el.field_id === 606679) {
-      //     // Серия
-      //     result.countSeries++;
-      //   }
-      //   if (el.field_id === 606681) {
-      //     // Инжиниринг
-      //     result.countIng++;
-      //   }
-      // });
-    });
+    // Теперь все данные синхронизированы по строкам!
+    for (let i = 0; i < allData.length; i++) {
+      const row = allData[i];
+      // E
+      const stage = row[4] || '';
+      // F
+      const pipeline = row[5] || '';
+      // Column G (индекс 6) - дата создания
+      const dateString = row[6] || '';
+      // Column AC (индекс 28) - статус
+      const status = row[28] || '';
 
-    [...result.departmentIng, ...result.departmentSeries].map((lead) => {
-      if (lead.status_id === 143) {
-        result.countClosed++;
+      // Пропускаем пустые даты
+      if (!dateString.trim()) continue;
+
+      try {
+        const dateClean = convertDateFormat(dateString.split(' ')[0]);
+        if (!dateClean) continue;
+
+        const [dateTimestamp] = getPeriodTimestamps(dateClean);
+
+        if (dateTimestamp >= startInputDate && dateTimestamp <= endInputDate) {
+          result.totalLeads++;
+
+          // Считаем статусы
+          if (status === 'Кв. Лид') {
+            result.countActiveLead++;
+
+            if (stage === 'Закрыто и не реализовано') {
+              result.countClosed++;
+            }
+            if (stage !== 'Закрыто и не реализовано') {
+              result.inProgress++;
+            }
+            if (
+              pipeline === 'Отдел инжиниринга' ||
+              pipeline === 'Отдел серийного оборудования'
+            ) {
+              result.pipelinesSeriesIng++;
+            }
+          }
+        }
+      } catch (error) {
+        console.error(`Ошибка обработки строки ${i + 2}:`, error);
       }
-    });
+    }
 
     return result;
   } catch (error) {
     if (error instanceof Error) {
-      await ctx.reply('Бот остановлен. Скорее всего сделок нет');
-
-      console.log('error' + error.message);
+      await ctx.reply('Ошибка при формировании отчета');
+      console.error('Ошибка в getReportLeadByPeriod:', error.message);
     }
+    return undefined;
   }
 };
 
