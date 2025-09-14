@@ -1,10 +1,10 @@
-// Добавим интерфейс для защищенных функций
 import { Context, InlineKeyboard } from 'grammy';
 import { updateAllFiled, updateIncomingCall } from './updateFields';
 import {
   createReportTimeByPeriod,
-  getReportLeadByPeriod,
+  getReportMarketing,
   showReportLeadByPeriod,
+  showReportLeadByYesterday,
 } from './timeReport';
 import { sendGoogleSheetLinkByEmail } from './emailSender';
 
@@ -52,7 +52,7 @@ const userStates: Record<number, UserState> = {};
 interface ProtectedHandler {
   (ctx: Context): Promise<void>;
 }
-
+// Стартовые команды
 export const fnStartingCommand = async (ctx: Context) => {
   botContext = ctx;
   if (ctx.from) {
@@ -130,6 +130,7 @@ export const accessCreateReport = async (ctx: Context) => {
   await ctx.answerCallbackQuery();
 };
 
+// Отчеты менджеров
 export const reportLeadPeriod = async (ctx: Context) => {
   if (!ctx.from) return;
   const userId = ctx.from.id;
@@ -140,19 +141,29 @@ export const reportLeadPeriod = async (ctx: Context) => {
   );
   await ctx.answerCallbackQuery();
 };
+export const reportLeadYesterday = async (ctx: Context) => {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayDate = yesterday.toLocaleDateString('ru-Ru');
+  await showReportLeadByYesterday(ctx, yesterdayDate);
+  await ctx.answerCallbackQuery();
+};
+export const reportLeadToday = async (ctx: Context) => {
+  const currentDate = new Date().toLocaleDateString('ru-RU');
+  await showReportLeadByPeriod(ctx, currentDate);
+  await ctx.answerCallbackQuery();
+};
 
 // Защищенные обработчики
 export const protectedGenerate = withAccessCheck(async (ctx) => {
   await updateAllFiled(ctx);
   await updateIncomingCall(ctx);
 });
-
 export const protectedReportTimeLastDay = withAccessCheck(async (ctx) => {
   await createReportTimeByPeriod(ctx);
   await updateAllFiled(ctx);
   await updateIncomingCall(ctx);
 });
-
 export const protectedReportTimePeriod = withAccessCheck(async (ctx) => {
   if (!ctx.from) return;
 
@@ -164,7 +175,6 @@ export const protectedReportTimePeriod = withAccessCheck(async (ctx) => {
   );
   await ctx.answerCallbackQuery();
 });
-
 export const protectedSendGoogleLink = withAccessCheck(async (ctx) => {
   try {
     const userEmail = process.env.RECEIVER_EMAIL;
@@ -183,7 +193,6 @@ export const protectedSendGoogleLink = withAccessCheck(async (ctx) => {
   }
   await ctx.answerCallbackQuery();
 });
-
 export const protectedReportMarketing = withAccessCheck(async (ctx) => {
   if (!ctx.from) return;
 
@@ -196,6 +205,7 @@ export const protectedReportMarketing = withAccessCheck(async (ctx) => {
   await ctx.answerCallbackQuery();
 });
 
+// Обработчик сообщений
 export const onInputText = async (ctx: Context) => {
   if (!ctx.from) return;
 
@@ -285,7 +295,7 @@ export const onInputText = async (ctx: Context) => {
 
     userStates[userId] = { type: 'authenticated', authenticatedAt: new Date() };
 
-    const response = await getReportLeadByPeriod(ctx, startDate, endDate);
+    const response = await getReportMarketing(ctx, startDate, endDate);
     if (response) {
       const {
         inProgress,
@@ -300,8 +310,7 @@ export const onInputText = async (ctx: Context) => {
          1. Лид: ${countActiveLead}\n 
          2. Квалифицировано: ${pipelinesSeriesIng} \n
          3. Закрыто и нереализовано: ${countClosed}\n 
-         4. В работе: ${inProgress} \n
-         5. Качественные: ${pipelinesSeriesIng - countClosed}`,
+         4. В работе: ${inProgress} \n`,
       );
     }
   }

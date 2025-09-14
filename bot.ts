@@ -19,6 +19,8 @@ import {
   protectedReportTimePeriod,
   protectedSendGoogleLink,
   reportLeadPeriod,
+  reportLeadToday,
+  reportLeadYesterday,
 } from './modules/generalFn';
 
 const bot = new Bot(process.env.BOT_API_KEY || '');
@@ -35,19 +37,10 @@ bot.callbackQuery('report-time-period', protectedReportTimePeriod);
 bot.callbackQuery('send-google-link', protectedSendGoogleLink);
 bot.callbackQuery('report-marketing-period', protectedReportMarketing);
 
-bot.callbackQuery('report-lead-yesterday', async (ctx) => {
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayDate = yesterday.toLocaleDateString('ru-Ru');
-  await showReportLeadByYesterday(ctx, yesterdayDate);
-  await ctx.answerCallbackQuery();
-});
-bot.callbackQuery('report-lead-today', async (ctx) => {
-  const currentDate = new Date().toLocaleDateString('ru-RU');
-  await showReportLeadByPeriod(ctx, currentDate);
-  await ctx.answerCallbackQuery();
-});
+bot.callbackQuery('report-lead-yesterday', reportLeadYesterday);
+bot.callbackQuery('report-lead-today', reportLeadToday);
 bot.callbackQuery('report-lead-period', reportLeadPeriod);
+
 bot.callbackQuery('menu', fnStartingCommand);
 bot.callbackQuery('access-create-report', accessCreateReport);
 

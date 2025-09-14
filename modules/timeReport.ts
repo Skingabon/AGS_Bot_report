@@ -149,7 +149,7 @@ interface IResultLeadMarketing {
   pipelinesSeriesIng: number;
 }
 
-export const getReportLeadByPeriod = async (
+export const getReportMarketing = async (
   ctx: Context,
   startDate: string,
   endDate?: string,
