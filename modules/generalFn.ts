@@ -4,7 +4,6 @@ import {
   createReportTimeByPeriod,
   getReportMarketing,
   showReportLeadByPeriod,
-  showReportLeadByYesterday,
 } from './timeReport';
 import { sendGoogleSheetLinkByEmail } from './emailSender';
 
@@ -145,7 +144,7 @@ export const reportLeadYesterday = async (ctx: Context) => {
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
   const yesterdayDate = yesterday.toLocaleDateString('ru-Ru');
-  await showReportLeadByYesterday(ctx, yesterdayDate);
+  await showReportLeadByPeriod(ctx, yesterdayDate);
   await ctx.answerCallbackQuery();
 };
 export const reportLeadToday = async (ctx: Context) => {

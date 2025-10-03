@@ -1,11 +1,7 @@
 import 'dotenv/config';
 import cron from 'node-cron';
 import { Bot } from 'grammy';
-import {
-  createReportTimeByPeriod,
-  showReportLeadByPeriod,
-  showReportLeadByYesterday,
-} from './modules/timeReport';
+import { createReportTimeByPeriod } from './modules/timeReport';
 import { sendGoogleSheetLinkByEmail } from './modules/emailSender';
 import { updateAllFiled, updateIncomingCall } from './modules/updateFields';
 import {
@@ -48,10 +44,28 @@ bot.on('message:text', onInputText);
 
 //Ежедневное заполнение отчета в 23.40
 cron.schedule('40 23 * * *', async () => {
-  console.log('Запуск ежедневного обновления...');
-  await createReportTimeByPeriod(botContext).catch(console.error);
-  await updateAllFiled(botContext).catch(console.error);
-  await updateIncomingCall(botContext).catch(console.error);
+  const fs = require('fs');
+  const logDir = './logs';
+  if (!fs.existsSync(logDir)) {
+    fs.mkdirSync(logDir, { recursive: true });
+  }
+
+  const logFile = `${logDir}/report.log`;
+  fs.appendFileSync(logFile, `${new Date().toISOString()} Начало отчета \n`);
+
+  try {
+    await createReportTimeByPeriod(botContext);
+    await updateAllFiled(botContext);
+    await updateIncomingCall(botContext);
+  } catch (error) {
+    if (error instanceof Error)
+      fs.appendFileSync(
+        logFile,
+        `${new Date().toISOString()} Ошибка отчета ${error.message}\n`,
+      );
+  } finally {
+    fs.appendFileSync(logFile, `${new Date().toISOString()} Конец отчета \n`);
+  }
 });
 
 //Ежедневная отправка ссылки неа отчет в 9.00

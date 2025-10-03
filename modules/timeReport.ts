@@ -12,70 +12,6 @@ import {
 } from '../helper';
 import { getParamsLead } from './updateFields';
 
-export const showReportLeadByYesterday = async (
-  ctx: Context,
-  startDate: string,
-  endDate?: string,
-) => {
-  try {
-    let timeDate: number[];
-
-    if (endDate) {
-      timeDate = getPeriodTimestamps(startDate, endDate);
-    } else {
-      timeDate = getPeriodTimestamps(startDate);
-    }
-    const [startTimestamp, endTimestamp] = timeDate;
-
-    const response = await getLeadToday(startTimestamp, endTimestamp);
-    const totalLeads: number = response.length;
-    let countSeries = 0;
-    let countIng = 0;
-    let countClosed = 0;
-    let notDistributed = 0;
-    response.map((lead) => {
-      if (lead.status_id === 143) {
-        countClosed++;
-      }
-      if (lead.status_id === 50238949 || lead.status_id === 50238952) {
-        // Новая заявка или взято в работу
-        notDistributed++;
-      }
-      if (!lead.custom_fields_values) return;
-      lead.custom_fields_values.map((el) => {
-        if (el.field_id === 606679) {
-          // Если поле серии заполнено
-          countSeries++;
-        }
-        if (el.field_id === 606681) {
-          countIng++;
-        }
-      });
-    });
-
-    const period = !endDate ? 'вчера' : `период: ${startDate}-${endDate}`;
-
-    const periodOutput = `Отчет за ${period}`;
-    await ctx.reply(
-      `${periodOutput}
-Всего сделок: <b>${totalLeads}</b>
-Не распределено: <b>${notDistributed}</b>
-Серия: <b>${countSeries}</b>
-Инжиниринг: <b>${countIng}</b>  
-Закрыто и нереализовано: <b>${countClosed}</b>`,
-      {
-        parse_mode: 'HTML',
-      },
-    );
-  } catch (error) {
-    if (error instanceof Error) {
-      await ctx.reply('Бот остановлен. Скорее всего сделок нет');
-
-      console.log('error' + error.message);
-    }
-  }
-};
-
 export const showReportLeadByPeriod = async (
   ctx: Context,
   startDate: string,
@@ -97,10 +33,18 @@ export const showReportLeadByPeriod = async (
     let countIng = 0;
     let countClosed = 0;
     let notDistributed = 0;
+    let service = 0;
+    let seller = 0;
     response.map((lead) => {
-      // if (lead.pipeline_id !== 5716552) return;
+      if (lead.pipeline_id === 6720186) {
+        seller++;
+      }
+      if (lead.pipeline_id === 9772278) {
+        service++;
+      }
       if (lead.status_id === 143) {
         countClosed++;
+        return;
       }
       if (lead.status_id === 50238949 || lead.status_id === 50238952) {
         // Новая заявка или взято в работу
@@ -126,7 +70,9 @@ export const showReportLeadByPeriod = async (
 Всего сделок: <b>${totalLeads}</b>
 Не распределено: <b>${notDistributed}</b>
 Серия: <b>${countSeries}</b>
-Инжиниринг: <b>${countIng}</b>  
+Инжиниринг: <b>${countIng}</b>
+Сервис: <b>${service}</b>  
+Поставщики: <b>${seller}</b>
 Закрыто и нереализовано: <b>${countClosed}</b>`,
       {
         parse_mode: 'HTML',
@@ -163,7 +109,7 @@ export const getReportMarketing = async (
 
     // Получаем ВСЕ данные одним запросом - это ключевое!
     const rowLength = (await getGoogleSheetData('A')).flat().length;
-    const allData = await getRangeValues(`A2:AK${rowLength}`);
+    const allData = await getRangeValues(`A2:AK${rowLength + 1}`);
 
     const result: IResultLeadMarketing = {
       totalLeads: 0,
@@ -203,8 +149,7 @@ export const getReportMarketing = async (
 
             if (stage === 'Закрыто и не реализовано') {
               result.countClosed++;
-            }
-            if (stage !== 'Закрыто и не реализовано') {
+            } else {
               result.inProgress++;
             }
             if (
@@ -224,7 +169,7 @@ export const getReportMarketing = async (
   } catch (error) {
     if (error instanceof Error) {
       await ctx.reply('Ошибка при формировании отчета');
-      console.error('Ошибка в getReportLeadByPeriod:', error.message);
+      console.error('Ошибка в getReportMarketing:', error.message);
     }
     return undefined;
   }
