@@ -6,6 +6,7 @@ import {
   getDate,
   getFieldValue,
   parseCustomDate,
+  parseDate,
   safeParseDate,
 } from '../helper';
 import {
@@ -68,6 +69,7 @@ export const getParamsLead = ({ lead, pipelinesMap }: getParamsLeadType) => {
   // Берем нужные даты
   const createdDate = new Date(lead.created_at * 1000);
   const createdAtFormatted = formatDate(lead.created_at); // "2025.04.22 15:30"
+  const dateFormatted = parseDate(createdAtFormatted);
   const takenDate = omTakenAt ? parseCustomDate(omTakenAt) : null; // Парсим обратно, если нужно
   const takeIngDate = omTakeIng ? parseCustomDate(omTakeIng) : null;
   const assignedDate = omAssignedAt ? parseCustomDate(omAssignedAt) : null;
@@ -146,6 +148,7 @@ export const getParamsLead = ({ lead, pipelinesMap }: getParamsLeadType) => {
     totalTimeLead, // Z
     nameIndustry, // AA
     nameProduct, //AB
+    dateFormatted, // Дата формата: 22 4 25
   };
 };
 
@@ -551,7 +554,9 @@ export const updateAllFiled = async (ctx: Context | null) => {
             totalTimeLead,
             nameIndustry,
             nameProduct,
+            dateFormatted,
           } = getParamsLead({ lead, pipelinesMap });
+          const { day, month, year } = dateFormatted;
 
           // Добавляем обновления
           sheetUpdates.push({
@@ -589,6 +594,10 @@ export const updateAllFiled = async (ctx: Context | null) => {
                 nameProduct,
               ],
             ],
+          });
+          sheetUpdates.push({
+            range: `AH${rowNumber}:AJ${rowNumber}`,
+            values: [[day, month, year]],
           });
 
           processedCount++;

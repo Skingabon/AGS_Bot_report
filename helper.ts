@@ -169,3 +169,20 @@ export function convertDateFormat(dateString: string): string | null {
   // Формируем новую дату в формате DD.MM.YYYY
   return `${day}.${month}.${year}`;
 }
+
+export type returnTypeParseDate = { day: number; month: number; year: number };
+
+export function parseDate(dateString: string): returnTypeParseDate {
+  // Разделяем строку по пробелу и берем только часть с датой
+  const datePart = dateString.split(' ')[0];
+
+  // Разделяем дату по точкам
+  const [year, month, day] = datePart.split('.').map(Number);
+
+  // Возвращаем объект с нужными значениями
+  return {
+    day: day,
+    month: month,
+    year: year % 100, // Берем последние две цифры года
+  };
+}
