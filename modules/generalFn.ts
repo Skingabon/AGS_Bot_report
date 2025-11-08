@@ -6,18 +6,27 @@ import {
   showReportLeadByPeriod,
 } from './timeReport';
 import { sendGoogleSheetLinkByEmail } from './emailSender';
+import { isHasAccess } from '../auth/auth';
 
 export let botContext: Context | null = null;
 
-const menuKeyboard = new InlineKeyboard()
-  .text('Для руководства', 'access-create-report')
-  .row()
-  .text('Отчет по сделкам за вчерашний день', 'report-lead-yesterday')
-  .row()
-  .text('Отчет по сделкам за сегодня', 'report-lead-today')
-  .row()
-  .text('Отчет по сделкам за период', 'report-lead-period')
-  .row();
+const getBaseMenu = (ctx: Context): InlineKeyboard => {
+  const menuKeyboard = new InlineKeyboard();
+
+  if (isHasAccess(ctx)) {
+    menuKeyboard.text('Для руководства', 'access-create-report').row();
+  }
+
+  menuKeyboard
+    .text('Отчет по сделкам за вчерашний день', 'report-lead-yesterday')
+    .row()
+    .text('Отчет по сделкам за сегодня', 'report-lead-today')
+    .row()
+    .text('Отчет по сделкам за период', 'report-lead-period')
+    .row();
+
+  return menuKeyboard;
+};
 
 const bossMenu = new InlineKeyboard()
   .text('Маркетинг', 'report-marketing-period')
@@ -48,9 +57,6 @@ type UserState =
 
 const userStates: Record<number, UserState> = {};
 
-interface ProtectedHandler {
-  (ctx: Context): Promise<void>;
-}
 // Стартовые команды
 export const fnStartingCommand = async (ctx: Context) => {
   botContext = ctx;
@@ -58,72 +64,20 @@ export const fnStartingCommand = async (ctx: Context) => {
     userStates[ctx.from.id] = null;
   }
   await ctx.reply('Выберите команду:', {
-    reply_markup: menuKeyboard,
+    reply_markup: getBaseMenu(ctx),
   });
 };
 
-// Функция проверки доступа
-export const checkAccess = async (ctx: Context): Promise<boolean> => {
-  if (!ctx.from) return false;
-
-  const userId = ctx.from.id;
-  const state = userStates[userId];
-
-  // Если пользователь уже аутентифицирован
-  if (state?.type === 'authenticated') {
-    // Проверяем, не истекла ли сессия (например, 5 минут)
-    const sessionTimeout = 5 * 60 * 1000; // 5 минут в миллисекундах
-    if (Date.now() - state.authenticatedAt.getTime() > sessionTimeout) {
-      userStates[userId] = null; // Сбрасываем сессию
-      return false;
-    }
-    return true;
-  }
-
-  return false;
-};
-
-// Декоратор для защищенных функций
-export const withAccessCheck = (
-  handler: ProtectedHandler,
-): ProtectedHandler => {
-  return async (ctx: Context) => {
-    const hasAccess = await checkAccess(ctx);
-
-    if (!hasAccess) {
-      const userId = ctx.from?.id;
-      if (userId) {
-        userStates[userId] = { type: 'password' };
-      }
-
-      const backBtn = new InlineKeyboard()
-        .text('Вернуться в меню', 'menu')
-        .row();
-
-      await ctx.reply('Требуется авторизация. Введите пароль:', {
-        reply_markup: backBtn,
-      });
-      return;
-    }
-
-    await handler(ctx);
-  };
-};
-
 export const accessCreateReport = async (ctx: Context) => {
-  if (!ctx.from) return;
-  const userId = ctx.from.id;
-
   // Проверяем, не аутентифицирован ли уже пользователь
-  const hasAccess = await checkAccess(ctx);
+  const hasAccess = isHasAccess(ctx);
 
   if (hasAccess) {
     await ctx.reply('Команды для руководства:', {
       reply_markup: bossMenu,
     });
   } else {
-    userStates[userId] = { type: 'password' };
-    await ctx.reply('Введите пароль для доступа к командам руководства:');
+    await ctx.reply('У вас нет доступа.');
   }
 
   await ctx.answerCallbackQuery();
@@ -154,16 +108,25 @@ export const reportLeadToday = async (ctx: Context) => {
 };
 
 // Защищенные обработчики
-export const protectedGenerate = withAccessCheck(async (ctx) => {
-  await updateAllFiled(ctx);
-  await updateIncomingCall(ctx);
-});
-export const protectedReportTimeLastDay = withAccessCheck(async (ctx) => {
-  await createReportTimeByPeriod(ctx);
-  await updateAllFiled(ctx);
-  await updateIncomingCall(ctx);
-});
-export const protectedReportTimePeriod = withAccessCheck(async (ctx) => {
+export const protectedSetIncomingCall = async (ctx: Context) => {
+  await ctx.reply('Обновляю динамические поля');
+  await updateAllFiled();
+  await ctx.reply('Обрабатываю исходящие звонки');
+  await updateIncomingCall();
+  await ctx.reply('Все готово!');
+};
+
+export const protectedReportTimeLastDay = async (ctx: Context) => {
+  await ctx.reply('Начинаю создавать таблицу со всеми статическими полям');
+  await createReportTimeByPeriod();
+  await ctx.reply('Обновляю динамические поля');
+  await updateAllFiled();
+  await ctx.reply('Обрабатываю исходящие звонки');
+  await updateIncomingCall();
+  await ctx.reply('Все готово!');
+};
+
+export const protectedReportTimePeriod = async (ctx: Context) => {
   if (!ctx.from) return;
 
   const userId = ctx.from.id;
@@ -173,8 +136,9 @@ export const protectedReportTimePeriod = withAccessCheck(async (ctx) => {
     'Введите НАЧАЛЬНУЮ дату периода в формате DD.MM.YYYY (например, 01.04.2025)',
   );
   await ctx.answerCallbackQuery();
-});
-export const protectedSendGoogleLink = withAccessCheck(async (ctx) => {
+};
+
+export const protectedSendGoogleLink = async (ctx: Context) => {
   try {
     const userEmail = process.env.RECEIVER_EMAIL;
     const googleSheetUrl = process.env.GOOGLE_SHEET_URL;
@@ -191,8 +155,9 @@ export const protectedSendGoogleLink = withAccessCheck(async (ctx) => {
     await ctx.reply(`Ошибка при отправке на почту: ${err}`);
   }
   await ctx.answerCallbackQuery();
-});
-export const protectedReportMarketing = withAccessCheck(async (ctx) => {
+};
+
+export const protectedReportMarketing = async (ctx: Context) => {
   if (!ctx.from) return;
 
   const userId = ctx.from.id;
@@ -202,7 +167,7 @@ export const protectedReportMarketing = withAccessCheck(async (ctx) => {
     'Введите НАЧАЛЬНУЮ дату периода в формате DD.MM.YYYY (например, 01.04.2025)',
   );
   await ctx.answerCallbackQuery();
-});
+};
 
 // Обработчик сообщений
 export const onInputText = async (ctx: Context) => {
@@ -214,30 +179,6 @@ export const onInputText = async (ctx: Context) => {
   if (!state) return;
   if (!ctx.message) return;
   const userInput = ctx.message.text;
-
-  if (state.type === 'password') {
-    if (userInput === process.env.BOSS_BTN_PASSWORD) {
-      // Устанавливаем состояние аутентификации
-      userStates[userId] = {
-        type: 'authenticated',
-        authenticatedAt: new Date(),
-      };
-
-      await ctx.reply('✅Команды для руководства:', {
-        reply_markup: bossMenu,
-      });
-      return;
-    } else {
-      const backBtn = new InlineKeyboard()
-        .text('Вернуться в меню', 'menu')
-        .row();
-
-      await ctx.reply('❌ Неверный пароль. Попробуйте еще раз:', {
-        reply_markup: backBtn,
-      });
-      return;
-    }
-  }
 
   if (!userInput) return;
   // Проверка формата даты
@@ -261,10 +202,12 @@ export const onInputText = async (ctx: Context) => {
     const endDate = userInput;
 
     userStates[userId] = { type: 'authenticated', authenticatedAt: new Date() };
-
-    await createReportTimeByPeriod(ctx, startDate, endDate);
-    await updateAllFiled(ctx);
-    await updateIncomingCall(ctx);
+    await ctx.reply('Начинаю создавать таблицу со всеми статическими полям');
+    await createReportTimeByPeriod(startDate, endDate);
+    await ctx.reply('Обновляю динамические поля');
+    await updateAllFiled();
+    await ctx.reply('Обрабатываю исходящие звонки');
+    await updateIncomingCall();
   } else if (state.type === 'awaiting_start_date') {
     userStates[userId] = {
       type: 'awaiting_end_date',

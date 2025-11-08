@@ -176,15 +176,11 @@ export const getReportMarketing = async (
 };
 
 export const createReportTimeByPeriod = async (
-  ctx: Context | null,
   startDate?: string,
   endDate?: string,
 ) => {
-  if (!ctx) return;
-  await ctx.reply('Начинаю создавать таблицу');
   try {
     const pipelinesResponse = await getAllPipelines();
-    await ctx.reply('Нашел данные о воронке');
     const pipelines = pipelinesResponse;
     const pipelinesMap = pipelines.reduce(
       (
@@ -221,8 +217,6 @@ export const createReportTimeByPeriod = async (
     }
 
     const response = await getLeadToday(startTimestamp, endTimestamp);
-
-    await ctx.reply('Собрал все сделки за выбранный преиод');
 
     let leads = response;
     if (!leads || leads.length === 0) {
@@ -298,13 +292,9 @@ export const createReportTimeByPeriod = async (
     const resource = {
       values: googleSheetsData,
     };
-    await ctx.reply('Добавляю в таблицу');
     await createGoogleFields(resource);
-    await ctx.reply('Все готово!');
   } catch (error) {
     if (error instanceof Error) {
-      await ctx.reply('Бот остановлен. Скорее всего сделок нет');
-
       console.log('error' + error.message);
     }
   }

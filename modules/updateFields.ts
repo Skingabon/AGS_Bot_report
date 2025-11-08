@@ -2,7 +2,6 @@ import { isCallNote, isMessageNote, Lead } from '../interfaces';
 import {
   formatDate,
   formatDiff,
-  getCurrentTime,
   getDate,
   getFieldValue,
   parseCustomDate,
@@ -17,7 +16,6 @@ import {
   getNotesByLead,
   updateLeadDateCall,
 } from '../services/apiAmo';
-import { Context } from 'grammy';
 import {
   getGoogleSheetData,
   updateFieldsGooglePack,
@@ -254,12 +252,8 @@ function isInvalidDateIncoming({
 }
 
 //Заполняю звонки за прошлые периоды если их небыло раньше
-export const updateIncomingCall = async (ctx: Context | null) => {
-  if (!ctx) return;
-
+export const updateIncomingCall = async () => {
   try {
-    await ctx.reply(`Начинаем проверять исходящие звонки! ${getCurrentTime()}`);
-
     // Получаем данные из таблицы
     const idsLead = (await getGoogleSheetData('A')).flat();
     const firstActionFromTable = (await getGoogleSheetData('T')).flat();
@@ -449,22 +443,15 @@ export const updateIncomingCall = async (ctx: Context | null) => {
     }
 
     await Promise.all(amoUpdatesPromises);
-
-    await ctx.reply(
-      `Готово! Обработано: ${processedCount}, Пропущено: ${skippedCount}, Всего: ${idsLead.length}. ${getCurrentTime()}`,
-    );
   } catch (err) {
     if (err instanceof Error) {
       console.error(`Глобальная ошибка: ${err.message}`);
-      await ctx.reply(`Произошла ошибка: ${err.message}`);
     }
   }
 };
 
-export const updateAllFiled = async (ctx: Context | null) => {
-  if (!ctx) return;
+export const updateAllFiled = async () => {
   try {
-    await ctx.reply('Заполняю основные поля');
     const idsLead = (await getGoogleSheetData('A')).flat();
 
     // Подготавливаем данные для пакетного обновления
@@ -474,7 +461,6 @@ export const updateAllFiled = async (ctx: Context | null) => {
     }[] = [];
 
     const pipelinesResponse = await getAllPipelines();
-    await ctx.reply('Нашел данные о воронке');
     const pipelines = pipelinesResponse;
     const pipelinesMap = pipelines.reduce(
       (
@@ -491,7 +477,8 @@ export const updateAllFiled = async (ctx: Context | null) => {
     let processedCount = 0;
     let notFoundCount = 0;
     let errorCount = 0;
-
+    //TODO: нужно пропускать "Закрыто и не реализовано", но когда нет менеджеров
+    //const allData = await getRangeValues(`A2:AK${rowLength + 1}`);
     // Обрабатываем лиды пакетами
     for (let i = 0; i < idsLead.length; i += batchSize) {
       const batch = idsLead.slice(i, i + batchSize);
@@ -632,13 +619,8 @@ export const updateAllFiled = async (ctx: Context | null) => {
         }
       }
     }
-
-    await ctx.reply(
-      `Готово! Обработано: ${processedCount}, Не найдено: ${notFoundCount}, Ошибок: ${errorCount}, Всего: ${idsLead.length}. ${getCurrentTime()}`,
-    );
   } catch (error) {
     if (error instanceof Error) {
-      await ctx.reply(`Критическая ошибка: ${error.message}`);
       console.log('error' + error.message);
     }
   }

@@ -9,7 +9,7 @@ import {
   botContext,
   fnStartingCommand,
   onInputText,
-  protectedGenerate,
+  protectedSetIncomingCall,
   protectedReportMarketing,
   protectedReportTimeLastDay,
   protectedReportTimePeriod,
@@ -27,7 +27,7 @@ bot.api.setMyCommands([
 
 bot.command('start', fnStartingCommand);
 
-bot.callbackQuery('generate', protectedGenerate);
+bot.callbackQuery('generate', protectedSetIncomingCall);
 bot.callbackQuery('report-time-last-day', protectedReportTimeLastDay);
 bot.callbackQuery('report-time-period', protectedReportTimePeriod);
 bot.callbackQuery('send-google-link', protectedSendGoogleLink);
@@ -54,9 +54,9 @@ cron.schedule('40 23 * * *', async () => {
   fs.appendFileSync(logFile, `${new Date().toISOString()} Начало отчета \n`);
 
   try {
-    await createReportTimeByPeriod(botContext);
-    await updateAllFiled(botContext);
-    await updateIncomingCall(botContext);
+    await createReportTimeByPeriod();
+    await updateAllFiled();
+    await updateIncomingCall();
   } catch (error) {
     if (error instanceof Error)
       fs.appendFileSync(
@@ -81,12 +81,11 @@ cron.schedule('00 09 * * *', async () => {
 
     await sendGoogleSheetLinkByEmail(userEmail, googleSheetUrl);
     if (botContext) {
-      await botContext.reply('Ссылка на Google Таблицу отправлена на почту!');
+      console.log('Ссылка на Google Таблицу отправлена на почту!');
     }
   } catch (err) {
-    console.error(err);
     if (botContext) {
-      await botContext.reply(`Ошибка при отправке на почту: ${err}`);
+      console.log(`Ошибка при отправке на почту: ${err}`);
     }
   }
 });
