@@ -1,18 +1,3 @@
-// export const getDate = (time: number): string => {
-//   const unixTimestamp = time; // Пример числа из created_at
-//
-//   const date = new Date(unixTimestamp * 1000); // Умножаем на 1000 для миллисекунд
-//   const formattedDate = date.toLocaleString('ru-RU', {
-//     day: 'numeric',
-//     month: 'numeric',
-//     year: 'numeric',
-//     hour: '2-digit',
-//     minute: '2-digit',
-//   });
-//   return formattedDate; // "05.04.2024, 15:34" (MSK)
-// };
-//
-
 import { CustomFields } from '../interfaces';
 
 export const getDate = (time: number): string => {
@@ -111,10 +96,6 @@ export function formatDiff(ms: number): string {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 }
 
-export function getCurrentTime() {
-  return `${new Date().getHours()}:${new Date().getMinutes()}`;
-}
-
 //новые поля
 export function getFieldValue(
   fields: CustomFields[],
@@ -194,8 +175,6 @@ export const parseDateTime = (dateString: string): Date | null => {
 
   const cleanString = dateString.trim();
 
-  console.log(`Парсим: "${cleanString}"`); // для отладки
-
   try {
     // Формат: "YYYY.MM.DD HH:MM"
     const match = cleanString.match(
@@ -246,7 +225,6 @@ export const parseDateTime = (dateString: string): Date | null => {
       return null;
     }
 
-    console.log(`✅ Успешно: "${cleanString}" -> ${date.toISOString()}`);
     return date;
   } catch (error) {
     console.log(`❌ Ошибка парсинга "${cleanString}":`, error);

@@ -1,4 +1,4 @@
-import { Context, InlineKeyboard } from 'grammy';
+import { Context } from 'grammy';
 import { updateAllFiled, updateIncomingCall } from './updateFields';
 import {
   createReportTimeByPeriod,
@@ -8,6 +8,7 @@ import {
 import { sendGoogleSheetLinkByEmail } from './emailSender';
 import { isHasAccess } from '../auth/auth';
 import { TelegramCalendar } from '../util/calendar';
+import { getBaseMenu, getBossMenu } from './keyboards';
 
 export let botContext: Context | null = null;
 
@@ -31,41 +32,6 @@ const calendarReport = async (
 
   await ctx.answerCallbackQuery();
 };
-
-const getBaseMenu = (ctx: Context): InlineKeyboard => {
-  const menuKeyboard = new InlineKeyboard();
-
-  if (isHasAccess(ctx)) {
-    menuKeyboard.text('Для руководства', 'access-create-report').row();
-  }
-
-  menuKeyboard
-    .text('Отчет по сделкам за вчерашний день', 'report-lead-yesterday')
-    .row()
-    .text('Отчет по сделкам за сегодня', 'report-lead-today')
-    .row()
-    .text('Отчет по сделкам за период', 'report-lead-period')
-    .row()
-    .text('test', 'test')
-    .row();
-
-  return menuKeyboard;
-};
-
-const bossMenu = new InlineKeyboard()
-  .text('Маркетинг', 'report-marketing-period')
-  .row()
-  .text('Создать отчет за последний день', 'report-time-last-day')
-  .row()
-  .text('Создать отчет за выбранный период', 'report-time-period')
-  .row()
-  //TODO Изменить логику заполнения поля Первое качание - если дата/время первого касапния младше даты создания сделки....
-  .text('Заполнить исходящие звонки', 'generate')
-  .row()
-  .text('Отправить ссылку на Google Таблицу на почту', 'send-google-link')
-  .row()
-  .text('Вернуться в меню', 'menu')
-  .row();
 
 const calendarStates: Record<
   number,
@@ -101,7 +67,7 @@ export const accessCreateReport = async (ctx: Context) => {
 
   if (hasAccess) {
     await ctx.reply('Команды для руководства:', {
-      reply_markup: bossMenu,
+      reply_markup: getBossMenu(),
     });
   } else {
     await ctx.reply('У вас нет доступа.');
@@ -110,7 +76,7 @@ export const accessCreateReport = async (ctx: Context) => {
   await ctx.answerCallbackQuery();
 };
 
-// Отчеты менджеров
+// Отчеты с выбором дат
 export const reportLeadPeriod = async (ctx: Context) => {
   await calendarReport(ctx, 'awaiting_start');
 };

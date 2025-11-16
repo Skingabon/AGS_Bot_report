@@ -10,18 +10,6 @@ const auth = new google.auth.GoogleAuth({
   scopes: ['https://www.googleapis.com/auth/spreadsheets'],
 });
 
-// export async function getGoogleSheetData(
-//   field: string = 'B',
-// ): Promise<Array<string[]>> {
-//   const sheets = google.sheets({ version: 'v4', auth });
-//   const response = await sheets.spreadsheets.values.get({
-//     spreadsheetId: SPREADSHEET_ID,
-//     //TODO найти номер последней строки с данными
-//     range: `${SHEET_NAME}!${field}2:${field}1000`,
-//   });
-//   return response.data.values || [];
-// }
-
 //Ищу последнюю строку с данными и формирую диапазон для заполнения
 export async function getGoogleSheetData(
   field: string = 'A',
@@ -160,8 +148,6 @@ export const sortSheetByDate = async (): Promise<void> => {
       return;
     }
 
-    console.log(`Начало сортировки ${data.length} строк...`);
-
     // Добавляем отладочную информацию
     const dataWithDebug = data.map((row, index) => {
       const dateString = row[6]; // столбец G
@@ -198,10 +184,6 @@ export const sortSheetByDate = async (): Promise<void> => {
         values: sortedData,
       },
     });
-
-    console.log(
-      `✅ Данные корректно отсортированы по дате. Обработано ${data.length} строк`,
-    );
   } catch (error) {
     console.error('Ошибка сортировки:', error);
     throw error;

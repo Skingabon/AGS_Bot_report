@@ -281,11 +281,6 @@ export const updateIncomingCall = async () => {
         const firstTouch = firstActionFromTable[idx];
         const stageLead = stageFromTable[idx];
 
-        // // ДЕБАГ: логируем текущую строку
-        // console.log(
-        //   `Строка ${rowNumber}: ID=${idsLead[idx]}, Статус="${stageLead}", Первое касание="${firstTouch}"`,
-        // );
-
         // 1. Пропускаем если статус "Закрыто и не реализовано" или пустой
         if (
           stageLead === 'Закрыто и не реализовано' ||

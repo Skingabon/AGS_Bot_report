@@ -41,8 +41,8 @@ bot.callbackQuery('report-lead-period', reportLeadPeriod);
 bot.callbackQuery('menu', fnStartingCommand);
 bot.callbackQuery('access-create-report', accessCreateReport);
 
+// Календарь
 bot.callbackQuery(/cal_date_(.+)/, onChangeDatePeriod);
-
 bot.callbackQuery(/cal_(prev|next)_(\d+)_(\d+)/, changeMonth);
 
 //Ежедневное заполнение отчета в 23.40
