@@ -7,8 +7,30 @@ import {
 } from './timeReport';
 import { sendGoogleSheetLinkByEmail } from './emailSender';
 import { isHasAccess } from '../auth/auth';
+import { TelegramCalendar } from '../util/calendar';
 
 export let botContext: Context | null = null;
+
+const calendarReport = async (
+  ctx: Context,
+  calendarType:
+    | 'awaiting_start_date_marketing'
+    | 'awaiting_start_date_report_time'
+    | 'awaiting_start',
+) => {
+  if (!ctx.from) return;
+  const userId = ctx.from.id;
+  calendarStates[userId] = { type: calendarType };
+
+  const { year, month } = TelegramCalendar.getCurrentMonth();
+
+  await ctx.editMessageText('📅 Выберите <b>начальную дату</b> периода:', {
+    parse_mode: 'HTML',
+    reply_markup: TelegramCalendar.generateMonth(year, month),
+  });
+
+  await ctx.answerCallbackQuery();
+};
 
 const getBaseMenu = (ctx: Context): InlineKeyboard => {
   const menuKeyboard = new InlineKeyboard();
@@ -23,6 +45,8 @@ const getBaseMenu = (ctx: Context): InlineKeyboard => {
     .text('Отчет по сделкам за сегодня', 'report-lead-today')
     .row()
     .text('Отчет по сделкам за период', 'report-lead-period')
+    .row()
+    .text('test', 'test')
     .row();
 
   return menuKeyboard;
@@ -43,25 +67,28 @@ const bossMenu = new InlineKeyboard()
   .text('Вернуться в меню', 'menu')
   .row();
 
-// Расширим тип UserState
-type UserState =
-  | { type: 'awaiting_start_date' }
-  | { type: 'awaiting_end_date'; startDate: string }
-  | { type: 'awaiting_start_date_report_time' }
-  | { type: 'awaiting_end_date_report_time'; startDateReportTime: string }
-  | { type: 'awaiting_start_date_marketing' }
-  | { type: 'awaiting_end_date_marketing'; startDateMarketing: string }
-  | { type: 'password' }
-  | { type: 'authenticated'; authenticatedAt: Date } // Новое состояние для аутентифицированных пользователей
-  | null;
-
-const userStates: Record<number, UserState> = {};
+const calendarStates: Record<
+  number,
+  | {
+      type: 'awaiting_start' | 'awaiting_end';
+      startDate?: string;
+    }
+  | {
+      type: 'awaiting_start_date_report_time' | 'awaiting_end_date_report_time';
+      startDate?: string;
+    }
+  | {
+      type: 'awaiting_start_date_marketing' | 'awaiting_end_date_marketing';
+      startDate?: string;
+    }
+  | null
+> = {};
 
 // Стартовые команды
 export const fnStartingCommand = async (ctx: Context) => {
   botContext = ctx;
   if (ctx.from) {
-    userStates[ctx.from.id] = null;
+    calendarStates[ctx.from.id] = null;
   }
   await ctx.reply('Выберите команду:', {
     reply_markup: getBaseMenu(ctx),
@@ -85,15 +112,15 @@ export const accessCreateReport = async (ctx: Context) => {
 
 // Отчеты менджеров
 export const reportLeadPeriod = async (ctx: Context) => {
-  if (!ctx.from) return;
-  const userId = ctx.from.id;
-  userStates[userId] = { type: 'awaiting_start_date' };
-
-  await ctx.reply(
-    'Введите НАЧАЛЬНУЮ дату периода в формате DD.MM.YYYY (например, 01.04.2025)',
-  );
-  await ctx.answerCallbackQuery();
+  await calendarReport(ctx, 'awaiting_start');
 };
+export const protectedReportTimePeriod = async (ctx: Context) => {
+  await calendarReport(ctx, 'awaiting_start_date_report_time');
+};
+export const protectedReportMarketing = async (ctx: Context) => {
+  await calendarReport(ctx, 'awaiting_start_date_marketing');
+};
+
 export const reportLeadYesterday = async (ctx: Context) => {
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
@@ -126,18 +153,6 @@ export const protectedReportTimeLastDay = async (ctx: Context) => {
   await ctx.reply('Все готово!');
 };
 
-export const protectedReportTimePeriod = async (ctx: Context) => {
-  if (!ctx.from) return;
-
-  const userId = ctx.from.id;
-  userStates[userId] = { type: 'awaiting_start_date_report_time' };
-
-  await ctx.reply(
-    'Введите НАЧАЛЬНУЮ дату периода в формате DD.MM.YYYY (например, 01.04.2025)',
-  );
-  await ctx.answerCallbackQuery();
-};
-
 export const protectedSendGoogleLink = async (ctx: Context) => {
   try {
     const userEmail = process.env.RECEIVER_EMAIL;
@@ -157,103 +172,121 @@ export const protectedSendGoogleLink = async (ctx: Context) => {
   await ctx.answerCallbackQuery();
 };
 
-export const protectedReportMarketing = async (ctx: Context) => {
-  if (!ctx.from) return;
-
+export const onChangeDatePeriod = async (ctx: Context) => {
+  if (!ctx.from || !ctx.match) return;
   const userId = ctx.from.id;
-  userStates[userId] = { type: 'awaiting_start_date_marketing' };
+  const selectedDate = ctx.match[1]; // DD.MM.YYYY
+  const state = calendarStates[userId];
 
-  await ctx.reply(
-    'Введите НАЧАЛЬНУЮ дату периода в формате DD.MM.YYYY (например, 01.04.2025)',
-  );
-  await ctx.answerCallbackQuery();
-};
-
-// Обработчик сообщений
-export const onInputText = async (ctx: Context) => {
-  if (!ctx.from) return;
-
-  const userId = ctx.from.id;
-  const state = userStates[userId];
-
-  if (!state) return;
-  if (!ctx.message) return;
-  const userInput = ctx.message.text;
-
-  if (!userInput) return;
-  // Проверка формата даты
-  if (!/^\d{2}\.\d{2}\.\d{4}$/.test(userInput)) {
-    await ctx.reply(
-      'Неверный формат даты. Пожалуйста, введите дату в формате DD.MM.YYYY',
-    );
+  if (!state) {
+    await ctx.answerCallbackQuery('❌ Сессия устарела');
     return;
   }
 
-  if (state.type === 'awaiting_start_date_report_time') {
-    userStates[userId] = {
-      type: 'awaiting_end_date_report_time',
-      startDateReportTime: userInput,
-    };
-    await ctx.reply(
-      'Теперь введите КОНЕЧНУЮ дату периода в формате DD.MM.YYYY',
-    );
-  } else if (state.type === 'awaiting_end_date_report_time') {
-    const startDate = state.startDateReportTime;
-    const endDate = userInput;
+  if (state.type === 'awaiting_start') {
+    state.startDate = selectedDate;
+    state.type = 'awaiting_end';
 
-    userStates[userId] = { type: 'authenticated', authenticatedAt: new Date() };
+    const { year, month } = TelegramCalendar.getCurrentMonth();
+
+    await ctx.editMessageText(
+      `✅ Начальная дата: <b>${selectedDate}</b>\n\n` +
+        'Теперь выберите <b>конечную дату</b>:',
+      {
+        parse_mode: 'HTML',
+        reply_markup: TelegramCalendar.generateMonth(year, month),
+      },
+    );
+  } else if (state.type === 'awaiting_end' && state.startDate) {
+    const endDate = selectedDate;
+
+    await ctx.editMessageText(
+      `✅ Период выбран:\n` +
+        `📅 С: ${state.startDate}\n` +
+        `📅 По: ${endDate}\n\n` +
+        `⏳ Формирую отчет...`,
+    );
+
+    // Вызываем вашу функцию
+    await showReportLeadByPeriod(ctx, state.startDate, endDate);
+
+    delete calendarStates[userId];
+  } else if (state.type === 'awaiting_start_date_report_time') {
+    state.startDate = selectedDate;
+    state.type = 'awaiting_end_date_report_time';
+
+    const { year, month } = TelegramCalendar.getCurrentMonth();
+
+    await ctx.editMessageText(
+      `✅ Начальная дата: <b>${selectedDate}</b>\n\n` +
+        'Теперь выберите <b>конечную дату</b>:',
+      {
+        parse_mode: 'HTML',
+        reply_markup: TelegramCalendar.generateMonth(year, month),
+      },
+    );
+  } else if (
+    state.type === 'awaiting_end_date_report_time' &&
+    state.startDate
+  ) {
+    const endDate = selectedDate;
+
+    await ctx.editMessageText(
+      `✅ Период выбран:\n` +
+        `📅 С: ${state.startDate}\n` +
+        `📅 По: ${endDate}\n\n` +
+        `⏳ Формирую отчет...`,
+    );
+
+    // Вызываем вашу функцию
     await ctx.reply('Начинаю создавать таблицу со всеми статическими полям');
-    await createReportTimeByPeriod(startDate, endDate);
+    await createReportTimeByPeriod(state.startDate, endDate);
     await ctx.reply('Обновляю динамические поля');
     await updateAllFiled();
     await ctx.reply('Обрабатываю исходящие звонки');
     await updateIncomingCall();
-  } else if (state.type === 'awaiting_start_date') {
-    userStates[userId] = {
-      type: 'awaiting_end_date',
-      startDate: userInput,
-    };
-    await ctx.reply(
-      'Теперь введите КОНЕЧНУЮ дату периода в формате DD.MM.YYYY',
-    );
-  } else if (state.type === 'awaiting_end_date') {
-    const startDate = state.startDate;
-    const endDate = userInput;
 
-    userStates[userId] = { type: 'authenticated', authenticatedAt: new Date() };
-
-    await showReportLeadByPeriod(ctx, startDate, endDate);
+    delete calendarStates[userId];
   } else if (state.type === 'awaiting_start_date_marketing') {
-    userStates[userId] = {
-      type: 'awaiting_end_date_marketing',
-      startDateMarketing: userInput,
-    };
-    await ctx.reply(
-      'Теперь введите КОНЕЧНУЮ дату периода в формате DD.MM.YYYY',
+    state.startDate = selectedDate;
+    state.type = 'awaiting_end_date_marketing';
+
+    const { year, month } = TelegramCalendar.getCurrentMonth();
+
+    await ctx.editMessageText(
+      `✅ Начальная дата: <b>${selectedDate}</b>\n\n` +
+        'Теперь выберите <b>конечную дату</b>:',
+      {
+        parse_mode: 'HTML',
+        reply_markup: TelegramCalendar.generateMonth(year, month),
+      },
     );
-  } else if (state.type === 'awaiting_end_date_marketing') {
-    const startDate = state.startDateMarketing;
-    const endDate = userInput;
+  } else if (state.type === 'awaiting_end_date_marketing' && state.startDate) {
+    const endDate = selectedDate;
 
-    userStates[userId] = { type: 'authenticated', authenticatedAt: new Date() };
+    await ctx.editMessageText(
+      `✅ Период выбран:\n` +
+        `📅 С: ${state.startDate}\n` +
+        `📅 По: ${endDate}\n\n` +
+        `⏳ Формирую отчет...`,
+    );
 
-    const response = await getReportMarketing(ctx, startDate, endDate);
+    // Вызываем вашу функцию
+    const response = await getReportMarketing(ctx, state.startDate, endDate);
     if (response) {
-      const {
-        inProgress,
-        countActiveLead,
-        countClosed,
-        pipelinesSeriesIng,
-        totalLeads,
-      } = response;
+      const { countActiveLead, countClosed, pipelinesSeriesIng, totalLeads } =
+        response;
 
       await ctx.reply(
         `Отчет за период готов! Найдено сделок: ${totalLeads}\n
          1. Лид: ${countActiveLead}\n 
          2. Квалифицировано: ${pipelinesSeriesIng} \n
-         3. Закрыто и нереализовано: ${countClosed}\n 
-         4. В работе: ${inProgress} \n`,
+         3. Отказ: ${countClosed}\n `,
       );
     }
+
+    delete calendarStates[userId];
   }
+
+  await ctx.answerCallbackQuery();
 };

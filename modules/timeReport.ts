@@ -9,7 +9,7 @@ import {
   convertDateFormat,
   formatDateByPeriod,
   getPeriodTimestamps,
-} from '../helper';
+} from '../util/helper';
 import { getParamsLead } from './updateFields';
 
 export const showReportLeadByPeriod = async (
@@ -128,8 +128,10 @@ export const getReportMarketing = async (
       const pipeline = row[5] || '';
       // Column G (индекс 6) - дата создания
       const dateString = row[6] || '';
-      // Column AC (индекс 28) - статус
-      const status = row[28] || '';
+      // Column H (индекс 7) - Взято в работу
+      const inWork = row[7] || '';
+      // Column X (индекс 23) - Причина отказа
+      const rejectColumn = row[23] || '';
 
       // Пропускаем пустые даты
       if (!dateString.trim()) continue;
@@ -139,25 +141,23 @@ export const getReportMarketing = async (
         if (!dateClean) continue;
 
         const [dateTimestamp] = getPeriodTimestamps(dateClean);
+        if (!dateTimestamp) continue;
 
         if (dateTimestamp >= startInputDate && dateTimestamp <= endInputDate) {
           result.totalLeads++;
-
-          // Считаем статусы
-          if (status === 'Кв. Лид') {
+          //  Считаем статусы
+          if (inWork) {
             result.countActiveLead++;
-
-            if (stage === 'Закрыто и не реализовано') {
-              result.countClosed++;
-            } else {
-              result.inProgress++;
-            }
-            if (
-              pipeline === 'Отдел инжиниринга' ||
-              pipeline === 'Отдел серийного оборудования'
-            ) {
-              result.pipelinesSeriesIng++;
-            }
+          }
+          if (
+            stage !== 'Закрыто и не реализовано' &&
+            (pipeline === 'Отдел инжиниринга' ||
+              pipeline === 'Отдел серийного оборудования')
+          ) {
+            result.countActiveLead++;
+          }
+          if (rejectColumn) {
+            result.countClosed++;
           }
         }
       } catch (error) {

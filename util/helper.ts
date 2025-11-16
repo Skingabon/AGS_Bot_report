@@ -13,7 +13,7 @@
 // };
 //
 
-import { CustomFields } from './interfaces';
+import { CustomFields } from '../interfaces';
 
 export const getDate = (time: number): string => {
   const date = new Date(time * 1000);
@@ -186,3 +186,70 @@ export function parseDate(dateString: string): returnTypeParseDate {
     year: year % 100, // Берем последние две цифры года
   };
 }
+// Parse DD.MM.YYYY HH:SS as Date
+export const parseDateTime = (dateString: string): Date | null => {
+  if (!dateString || typeof dateString !== 'string') {
+    return null;
+  }
+
+  const cleanString = dateString.trim();
+
+  console.log(`Парсим: "${cleanString}"`); // для отладки
+
+  try {
+    // Формат: "YYYY.MM.DD HH:MM"
+    const match = cleanString.match(
+      /^(\d{4})\.(\d{1,2})\.(\d{1,2}) (\d{1,2}):(\d{1,2})$/,
+    );
+
+    if (!match) {
+      console.log(
+        `❌ Не соответствует формату YYYY.MM.DD HH:MM: "${cleanString}"`,
+      );
+      return null;
+    }
+
+    const [, yearStr, monthStr, dayStr, hoursStr, minutesStr] = match;
+
+    // Преобразуем в числа
+    const year = parseInt(yearStr, 10);
+    const month = parseInt(monthStr, 10);
+    const day = parseInt(dayStr, 10);
+    const hours = parseInt(hoursStr, 10);
+    const minutes = parseInt(minutesStr, 10);
+
+    // Валидация
+    if (
+      day < 1 ||
+      day > 31 ||
+      month < 1 ||
+      month > 12 ||
+      year < 2000 ||
+      year > 2100 ||
+      hours < 0 ||
+      hours > 23 ||
+      minutes < 0 ||
+      minutes > 59
+    ) {
+      console.log(
+        `❌ Неверные компоненты даты: ${year}.${month}.${day} ${hours}:${minutes}`,
+      );
+      return null;
+    }
+
+    // Создаем дату (секунды = 0)
+    const date = new Date(year, month - 1, day, hours, minutes, 0);
+
+    // Проверяем что дата создалась корректно
+    if (isNaN(date.getTime())) {
+      console.log(`❌ Некорректная дата: ${dateString}`);
+      return null;
+    }
+
+    console.log(`✅ Успешно: "${cleanString}" -> ${date.toISOString()}`);
+    return date;
+  } catch (error) {
+    console.log(`❌ Ошибка парсинга "${cleanString}":`, error);
+    return null;
+  }
+};

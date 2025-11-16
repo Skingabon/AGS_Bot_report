@@ -8,7 +8,6 @@ import {
   accessCreateReport,
   botContext,
   fnStartingCommand,
-  onInputText,
   protectedSetIncomingCall,
   protectedReportMarketing,
   protectedReportTimeLastDay,
@@ -17,7 +16,9 @@ import {
   reportLeadPeriod,
   reportLeadToday,
   reportLeadYesterday,
+  onChangeDatePeriod,
 } from './modules/generalFn';
+import { changeMonth } from './util/calendar';
 
 const bot = new Bot(process.env.BOT_API_KEY || '');
 
@@ -40,7 +41,9 @@ bot.callbackQuery('report-lead-period', reportLeadPeriod);
 bot.callbackQuery('menu', fnStartingCommand);
 bot.callbackQuery('access-create-report', accessCreateReport);
 
-bot.on('message:text', onInputText);
+bot.callbackQuery(/cal_date_(.+)/, onChangeDatePeriod);
+
+bot.callbackQuery(/cal_(prev|next)_(\d+)_(\d+)/, changeMonth);
 
 //Ежедневное заполнение отчета в 23.40
 cron.schedule('40 23 * * *', async () => {

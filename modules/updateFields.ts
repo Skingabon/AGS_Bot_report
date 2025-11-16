@@ -7,7 +7,7 @@ import {
   parseCustomDate,
   parseDate,
   safeParseDate,
-} from '../helper';
+} from '../util/helper';
 import {
   getAllPipelines,
   getContactsByIdLead,
@@ -18,6 +18,7 @@ import {
 } from '../services/apiAmo';
 import {
   getGoogleSheetData,
+  sortSheetByDate,
   updateFieldsGooglePack,
 } from '../services/apiGoogleTable';
 import { statusMap } from './statusList';
@@ -443,6 +444,7 @@ export const updateIncomingCall = async () => {
     }
 
     await Promise.all(amoUpdatesPromises);
+    await sortSheetByDate();
   } catch (err) {
     if (err instanceof Error) {
       console.error(`Глобальная ошибка: ${err.message}`);

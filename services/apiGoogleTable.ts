@@ -1,6 +1,7 @@
 //TODO: заменить на нужное ID таблицы
 import 'dotenv/config';
 import { google } from 'googleapis';
+import { parseDateTime } from '../util/helper';
 
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const SHEET_NAME = 'Time';
@@ -139,4 +140,70 @@ export const updateFieldsGooglePack = async (sheetUpdates: sheetUpdates[]) => {
       valueInputOption: 'RAW',
     },
   });
+};
+
+// utils/sheetSorter.ts
+export const sortSheetByDate = async (): Promise<void> => {
+  const sheets = google.sheets({ version: 'v4', auth });
+  const lastRow = 'AL';
+
+  try {
+    // Получаем данные
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${SHEET_NAME}!A2:${lastRow}`,
+    });
+
+    const data = response.data.values || [];
+    if (data.length === 0) {
+      console.log('Нет данных для сортировки');
+      return;
+    }
+
+    console.log(`Начало сортировки ${data.length} строк...`);
+
+    // Добавляем отладочную информацию
+    const dataWithDebug = data.map((row, index) => {
+      const dateString = row[6]; // столбец G
+      const parsedDate = parseDateTime(dateString);
+
+      return {
+        originalIndex: index,
+        row: row,
+        dateString: dateString,
+        parsedDate: parsedDate,
+        timestamp: parsedDate ? parsedDate.getTime() : 0,
+      };
+    });
+
+    // Сортируем по timestamp
+    const sortedWithDebug = dataWithDebug.sort((a, b) => {
+      // Сначала валидные даты, потом невалидные
+      if (!a.parsedDate && !b.parsedDate) return 0;
+      if (!a.parsedDate) return 1;
+      if (!b.parsedDate) return -1;
+
+      return a.timestamp - b.timestamp; // по возрастанию
+    });
+
+    // Извлекаем только строки
+    const sortedData = sortedWithDebug.map((item) => item.row);
+
+    // Записываем обратно
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${SHEET_NAME}!A2:${lastRow}`,
+      valueInputOption: 'RAW',
+      requestBody: {
+        values: sortedData,
+      },
+    });
+
+    console.log(
+      `✅ Данные корректно отсортированы по дате. Обработано ${data.length} строк`,
+    );
+  } catch (error) {
+    console.error('Ошибка сортировки:', error);
+    throw error;
+  }
 };
