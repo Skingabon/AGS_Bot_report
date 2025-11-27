@@ -154,7 +154,7 @@ export const sortSheetByDate = async (isAllField = false): Promise<void> => {
     // Записываем обратно
     await sheets.spreadsheets.values.update({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${SHEET_NAME}!A2:${lastRow}`,
+      range: `${SHEET_NAME}!A${startRange}:${lastRow}`,
       valueInputOption: 'RAW',
       requestBody: {
         values: sortedData,
