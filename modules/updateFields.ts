@@ -455,7 +455,6 @@ export const updateIncomingCall = async (isAllField = false) => {
     }
 
     await Promise.all(amoUpdatesPromises);
-    await sortSheetByDate();
   } catch (err) {
     if (err instanceof Error) {
       console.error(`Глобальная ошибка: ${err.message}`);

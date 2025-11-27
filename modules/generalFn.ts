@@ -110,6 +110,8 @@ export const protectedSetIncomingCall = async (
   await updateAllFiled(isFillAllField);
   await ctx.reply('Обрабатываю исходящие звонки');
   await updateIncomingCall(isFillAllField);
+  await ctx.reply('Делаю сортировку');
+  await sortSheetByDate(isFillAllField);
   await ctx.reply('Все готово!');
 };
 
@@ -120,6 +122,8 @@ export const protectedReportTimeLastDay = async (ctx: Context) => {
   await updateAllFiled();
   await ctx.reply('Обрабатываю исходящие звонки');
   await updateIncomingCall();
+  await ctx.reply('Делаю сортировку');
+  await sortSheetByDate();
   await ctx.reply('Все готово!');
 };
 

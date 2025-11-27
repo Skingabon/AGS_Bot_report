@@ -32,7 +32,9 @@ bot.command('start', fnStartingCommand);
 bot.callbackQuery('generate-for-quartet', (ctx) =>
   protectedSetIncomingCall(ctx),
 );
-bot.callbackQuery('generate', (ctx) => protectedSetIncomingCall(ctx, true));
+bot.callbackQuery('incoming-call', (ctx) =>
+  protectedSetIncomingCall(ctx, true),
+);
 bot.callbackQuery('report-time-last-day-for-quarter', (ctx) =>
   protectedReportTimeLastDay(ctx),
 );
