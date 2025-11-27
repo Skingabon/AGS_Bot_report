@@ -7,6 +7,7 @@ import {
   parseCustomDate,
   parseDate,
   safeParseDate,
+  startRangeWith,
 } from '../util/helper';
 import {
   getAllPipelines,
@@ -18,6 +19,7 @@ import {
 } from '../services/apiAmo';
 import {
   getGoogleSheetData,
+  getRangeValues,
   sortSheetByDate,
   updateFieldsGooglePack,
 } from '../services/apiGoogleTable';
@@ -253,12 +255,12 @@ function isInvalidDateIncoming({
 }
 
 //Заполняю звонки за прошлые периоды если их небыло раньше
-export const updateIncomingCall = async () => {
+export const updateIncomingCall = async (isAllField = false) => {
   try {
     // Получаем данные из таблицы
-    const idsLead = (await getGoogleSheetData('A')).flat();
-    const firstActionFromTable = (await getGoogleSheetData('T')).flat();
-    const stageFromTable = (await getGoogleSheetData('E')).flat();
+    const rowLength = (await getGoogleSheetData('A')).flat().length + 1;
+    const startRange = startRangeWith(isAllField, rowLength);
+    const allData = await getRangeValues(`A${startRange}:AL${rowLength}`);
 
     // Подготавливаем данные для пакетного обновления
     const sheetUpdates: {
@@ -272,20 +274,27 @@ export const updateIncomingCall = async () => {
     let skippedCount = 0;
 
     // Обрабатываем лиды пакетами
-    for (let i = 0; i < idsLead.length; i += batchSize) {
-      const batch = idsLead.slice(i, i + batchSize);
+    for (let i = 0; i < allData.length; i += batchSize) {
+      const batch = allData.slice(i, i + batchSize);
 
       for (let j = 0; j < batch.length; j++) {
-        const idx = i + j;
-        const rowNumber = idx + 2;
-        const firstTouch = firstActionFromTable[idx];
-        const stageLead = stageFromTable[idx];
+        const row = batch[j];
+        const globalIndex = i + j;
 
-        // 1. Пропускаем если статус "Закрыто и не реализовано" или пустой
+        const idLeadFromTable = row[0] || ''; // A
+        const stageLead = row[4]; // E
+        const inWorking = row[7]; // H
+        const firstTouch = row[19]; // T
+        const performer = row[37]; // AL
+        const rowNumber = globalIndex + startRange;
+        console.log(
+          performer,
+          stageLead === 'Закрыто и не реализовано' && performer === 'Не Квал',
+        );
+        // 1. Пропускаем если статус "Закрыто и не реализовано" и не квал
         if (
-          stageLead === 'Закрыто и не реализовано' ||
-          !stageLead ||
-          stageLead.trim() === ''
+          stageLead === 'Закрыто и не реализовано' &&
+          performer === 'Не Квал'
         ) {
           sheetUpdates.push({
             range: `T${rowNumber}:V${rowNumber}`,
@@ -295,18 +304,24 @@ export const updateIncomingCall = async () => {
           continue;
         }
 
-        // 2. Пропускаем если УЖЕ ЕСТЬ данные о первом касании (кроме определенных значений)
-        const shouldProcessFirstTouch =
-          !firstTouch ||
-          firstTouch.trim() === '' ||
-          firstTouch === 'Не актуально' ||
-          firstTouch === 'Старый лид' ||
-          firstTouch === 'Ошибка обработки' ||
-          firstTouch === 'Лид не найден' ||
-          firstTouch === '-' ||
-          firstTouch === 'Неверный ID';
+        if (!inWorking || inWorking.trim() === '') {
+          sheetUpdates.push({
+            range: `T${rowNumber}:V${rowNumber}`,
+            values: [['-', '-', '-']],
+          });
+          skippedCount++;
+          continue;
+        }
 
-        if (!shouldProcessFirstTouch) {
+        // 2. Пропускаем если УЖЕ ЕСТЬ данные о первом касании (кроме определенных значений)
+        // const shouldProcessFirstTouch =
+        //   firstTouch === 'Старый лид' ||
+        //   firstTouch === 'Ошибка обработки' ||
+        //   firstTouch === 'Лид не найден' ||
+        //   firstTouch === 'Неверный ID' ||
+        //   firstTouch !== '-';
+
+        if (firstTouch.includes('/')) {
           // Если уже есть нормальные данные - пропускаем
           // console.log(
           //   `Пропускаем строку ${rowNumber} - уже есть данные: "${firstTouch}"`,
@@ -316,10 +331,11 @@ export const updateIncomingCall = async () => {
         }
 
         try {
-          const idLead = Number(batch[j]);
-
           // Проверка валидности ID
-          if (isNaN(idLead) || idLead === 0) {
+          if (!idLeadFromTable) continue;
+          const idLead = Number(idLeadFromTable);
+
+          if (isNaN(Number(idLead)) || Number(idLead) === 0) {
             sheetUpdates.push({
               range: `T${rowNumber}:V${rowNumber}`,
               values: [['Неверный ID', '-', '-']],
@@ -447,9 +463,11 @@ export const updateIncomingCall = async () => {
   }
 };
 
-export const updateAllFiled = async () => {
+export const updateAllFiled = async (isAllField = false) => {
   try {
-    const idsLead = (await getGoogleSheetData('A')).flat();
+    const rowLength = (await getGoogleSheetData('A')).flat().length + 1;
+    const startRange = startRangeWith(isAllField, rowLength);
+    const allData = await getRangeValues(`A${startRange}:AL${rowLength}`);
 
     // Подготавливаем данные для пакетного обновления
     const sheetUpdates: {
@@ -477,15 +495,30 @@ export const updateAllFiled = async () => {
     //TODO: нужно пропускать "Закрыто и не реализовано", но когда нет менеджеров
     //const allData = await getRangeValues(`A2:AK${rowLength + 1}`);
     // Обрабатываем лиды пакетами
-    for (let i = 0; i < idsLead.length; i += batchSize) {
-      const batch = idsLead.slice(i, i + batchSize);
+    for (let i = 0; i < allData.length; i += batchSize) {
+      const batch = allData.slice(i, i + batchSize);
 
       for (let j = 0; j < batch.length; j++) {
-        const idx = i + j;
-        const rowNumber = idx + 2;
+        const row = batch[j]; // ← ИСПРАВЛЕНО: было allData[i], стало batch[j]
+        const globalIndex = i + j;
+        const rowNumber = globalIndex + startRange;
+        const idLeadFromTable = row[0] || ''; // A
 
         try {
-          const idLead = Number(batch[j]);
+          if (!idLeadFromTable) {
+            sheetUpdates.push({
+              range: `E${rowNumber}:S${rowNumber}`,
+              values: [Array(15).fill('Пустой ID')],
+            });
+            sheetUpdates.push({
+              range: `W${rowNumber}:AB${rowNumber}`,
+              values: [Array(6).fill('Пустой ID')],
+            });
+            errorCount++;
+            continue;
+          }
+
+          const idLead = Number(idLeadFromTable);
 
           // Проверяем валидность ID
           if (isNaN(idLead) || idLead === 0) {

@@ -1,7 +1,7 @@
 //TODO: заменить на нужное ID таблицы
 import 'dotenv/config';
 import { google } from 'googleapis';
-import { parseDateTime } from '../util/helper';
+import { parseDateTime, startRangeWith } from '../util/helper';
 
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 const SHEET_NAME = 'Time';
@@ -84,32 +84,6 @@ export async function createGoogleFields(data: LeadRow) {
   });
 }
 
-export async function updateGoogleFields(
-  data: LeadRow,
-  startField: string,
-  endField: string,
-) {
-  const sheets = google.sheets({ version: 'v4', auth });
-
-  // Сначала получаем все строки в выбранном столбце, начиная со второй
-  const columnResponse = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEET_NAME}!${startField}2:${startField}`,
-  });
-
-  const values = columnResponse.data.values || [];
-  // Вычисляем последнюю строку с данными
-  const lastRow = values.length + 1;
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${startField}2:${endField}${lastRow}`,
-    valueInputOption: 'RAW',
-    requestBody: {
-      values: data.values,
-    },
-  });
-}
-
 type sheetUpdates = { range: string; values: (string | number)[][] };
 
 export const updateFieldsGooglePack = async (sheetUpdates: sheetUpdates[]) => {
@@ -131,15 +105,17 @@ export const updateFieldsGooglePack = async (sheetUpdates: sheetUpdates[]) => {
 };
 
 // utils/sheetSorter.ts
-export const sortSheetByDate = async (): Promise<void> => {
+export const sortSheetByDate = async (isAllField = false): Promise<void> => {
   const sheets = google.sheets({ version: 'v4', auth });
   const lastRow = 'AL';
 
   try {
+    const rowLength = (await getGoogleSheetData('A')).flat().length + 1;
+    const startRange = startRangeWith(isAllField, rowLength);
     // Получаем данные
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${SHEET_NAME}!A2:${lastRow}`,
+      range: `${SHEET_NAME}!A${startRange}:${lastRow}`,
     });
 
     const data = response.data.values || [];

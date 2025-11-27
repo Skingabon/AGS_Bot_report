@@ -231,3 +231,10 @@ export const parseDateTime = (dateString: string): Date | null => {
     return null;
   }
 };
+
+export const startRangeWith = (flag: boolean, allRow: number) => {
+  const needRow = 1700;
+  const firstRow = 2;
+
+  return flag ? firstRow : allRow - needRow;
+};

@@ -23,14 +23,23 @@ export const getBossMenu = () => {
   const bossMenu = new InlineKeyboard()
     .text('Маркетинг', 'report-marketing-period')
     .row()
-    .text('Создать отчет за последний день', 'report-time-last-day')
+    .text(
+      'Создать отчет за посл. день (+ все поля квартал)',
+      'report-time-last-day',
+    )
     .row()
     .text('Создать отчет за выбранный период', 'report-time-period')
     .row()
     //TODO Изменить логику заполнения поля Первое качание - если дата/время первого касапния младше даты создания сделки....
-    .text('Заполнить исходящие звонки', 'generate')
+    .text('Исх. звонки и все поля за квартал', 'generate-for-quartet')
+    .row()
+    .text('Сортировка за квартал', 'sort-for-quartet')
     .row()
     .text('Отправить ссылку на Google Таблицу на почту', 'send-google-link')
+    .row()
+    .text('⚠️ Исх. звонки и все поля (all)', 'generate')
+    .row()
+    .text('⚠️ Сортировка всей таблицы', 'sort-all')
     .row()
     .text('Вернуться в меню', 'menu')
     .row();

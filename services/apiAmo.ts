@@ -10,24 +10,6 @@ const pipelinesUrl = `https://${domain}.amocrm.ru/api/v4/leads/pipelines`; // UR
 
 const token = process.env.FETCH_API_TOKEN;
 
-//Получаю сделки по ID Анализ
-// export const getLeadById = async (id: number): Promise<Lead> => {
-//   const response = await fetch(`${apiUrl}/${id}`, {
-//     headers: {
-//       Authorization: 'Bearer ' + token,
-//     },
-//   });
-//
-//   if (!response.ok) {
-//     throw new Error(
-//       `Ошибка получения сделки с ID ${id}: ${response.statusText}`,
-//     );
-//   }
-//
-//   const lead = await response.json();
-//   return lead;
-// };
-//
 export const getNotesByLead = async (
   id: number,
 ): Promise<noteType[] | null> => {

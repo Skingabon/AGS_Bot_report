@@ -9,6 +9,7 @@ import { sendGoogleSheetLinkByEmail } from './emailSender';
 import { isHasAccess } from '../auth/auth';
 import { TelegramCalendar } from '../util/calendar';
 import { getBaseMenu, getBossMenu } from './keyboards';
+import { sortSheetByDate } from '../services/apiGoogleTable';
 
 export let botContext: Context | null = null;
 
@@ -101,11 +102,14 @@ export const reportLeadToday = async (ctx: Context) => {
 };
 
 // Защищенные обработчики
-export const protectedSetIncomingCall = async (ctx: Context) => {
+export const protectedSetIncomingCall = async (
+  ctx: Context,
+  isFillAllField = false,
+) => {
   await ctx.reply('Обновляю динамические поля');
-  await updateAllFiled();
+  await updateAllFiled(isFillAllField);
   await ctx.reply('Обрабатываю исходящие звонки');
-  await updateIncomingCall();
+  await updateIncomingCall(isFillAllField);
   await ctx.reply('Все готово!');
 };
 
@@ -136,6 +140,12 @@ export const protectedSendGoogleLink = async (ctx: Context) => {
     await ctx.reply(`Ошибка при отправке на почту: ${err}`);
   }
   await ctx.answerCallbackQuery();
+};
+
+export const sortTableByDate = async (ctx: Context, isFillAllField = false) => {
+  await ctx.reply('Начинаю сортировку');
+  await sortSheetByDate(isFillAllField);
+  await ctx.reply('Готово');
 };
 
 export const onChangeDatePeriod = async (ctx: Context) => {

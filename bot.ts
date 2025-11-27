@@ -17,6 +17,7 @@ import {
   reportLeadToday,
   reportLeadYesterday,
   onChangeDatePeriod,
+  sortTableByDate,
 } from './modules/generalFn';
 import { changeMonth } from './util/calendar';
 
@@ -28,7 +29,18 @@ bot.api.setMyCommands([
 
 bot.command('start', fnStartingCommand);
 
-bot.callbackQuery('generate', protectedSetIncomingCall);
+bot.callbackQuery('generate-for-quartet', (ctx) =>
+  protectedSetIncomingCall(ctx),
+);
+bot.callbackQuery('generate', (ctx) => protectedSetIncomingCall(ctx, true));
+bot.callbackQuery('report-time-last-day-for-quarter', (ctx) =>
+  protectedReportTimeLastDay(ctx),
+);
+
+// Сортировка
+bot.callbackQuery('sort-for-quartet', (ctx) => sortTableByDate(ctx));
+bot.callbackQuery('sort-all', (ctx) => sortTableByDate(ctx, true));
+
 bot.callbackQuery('report-time-last-day', protectedReportTimeLastDay);
 bot.callbackQuery('report-time-period', protectedReportTimePeriod);
 bot.callbackQuery('send-google-link', protectedSendGoogleLink);
