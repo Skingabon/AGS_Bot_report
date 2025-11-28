@@ -237,11 +237,17 @@ async function getCreatedAtIncomingCallOrMessage(
     lead.id,
     lead.created_at,
   );
-  if (!incomingAction?.time) {
-    incomingAction = await incomingCallDate(lead.id);
+  const incomingCall = await incomingCallDate(lead.id);
+
+  if (!incomingAction) {
+    return incomingCall;
   }
 
-  return incomingAction;
+  if (incomingCall && incomingAction.time < incomingCall.time) {
+    return incomingAction;
+  } else {
+    return incomingCall;
+  }
 }
 
 function isInvalidDateIncoming({
@@ -287,10 +293,7 @@ export const updateIncomingCall = async (isAllField = false) => {
         const firstTouch = row[19]; // T
         const performer = row[37]; // AL
         const rowNumber = globalIndex + startRange;
-        console.log(
-          performer,
-          stageLead === 'Закрыто и не реализовано' && performer === 'Не Квал',
-        );
+
         // 1. Пропускаем если статус "Закрыто и не реализовано" и не квал
         if (
           stageLead === 'Закрыто и не реализовано' &&
