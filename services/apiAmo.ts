@@ -56,7 +56,7 @@ export async function getAllPipelines(): Promise<Pipeline[]> {
   return res._embedded.pipelines;
 }
 
-export async function getLeadToday(
+export async function getLeadsToday(
   startTimestamp: number,
   endTimestamp: number,
   page: number = 1,
@@ -85,7 +85,7 @@ export async function getLeadToday(
 
     // Если есть больше страниц, делаем следующий запрос
     if (leads.length === limit) {
-      return getLeadToday(
+      return getLeadsToday(
         startTimestamp,
         endTimestamp,
         page + 1,
@@ -98,6 +98,57 @@ export async function getLeadToday(
     console.error('Ошибка при получении сделок:', error);
     throw error;
   }
+}
+
+export async function getAllDealsForPeriod(
+  startTimestamp: number,
+  endTimestamp: number,
+) {
+  const limit = 250; // Максимальное количество на страницу
+  let page = 1;
+  let allDeals: Lead[] = [];
+  let hasMore = true;
+
+  while (hasMore) {
+    try {
+      const response = await fetch(
+        `${apiUrl}?page=${page}&limit=${limit}&filter[created_at][from]=${startTimestamp}&filter[created_at][to]=${endTimestamp}`,
+        {
+          headers: {
+            Authorization: `Bearer ${TOKEN}`,
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const deals = data._embedded?.leads || [];
+
+      if (deals.length > 0) {
+        allDeals = allDeals.concat(deals);
+        page++;
+
+        // Проверяем, есть ли еще данные
+        if (deals.length < limit) {
+          hasMore = false;
+        }
+      } else {
+        hasMore = false;
+      }
+
+      // Добавляем задержку чтобы не превысить лимиты API
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    } catch (error) {
+      console.error('Error fetching deals:', error);
+      hasMore = false;
+    }
+  }
+
+  return allDeals;
 }
 
 export async function getLeadById(id: number): Promise<Lead | null> {

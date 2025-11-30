@@ -20,6 +20,11 @@ import {
   sortTableByDate,
 } from './modules/generalFn';
 import { changeMonth } from './util/calendar';
+import {
+  getLastRowGoogleSheet,
+  updateFieldsGooglePack,
+} from './services/apiGoogleTable';
+import { getLeadsToday } from './services/apiAmo';
 
 const bot = new Bot(process.env.BOT_API_KEY || '');
 
@@ -61,26 +66,66 @@ bot.callbackQuery(/cal_(prev|next)_(\d+)_(\d+)/, changeMonth);
 
 //Ежедневное заполнение отчета в 23.40
 cron.schedule('40 23 * * *', async () => {
+  let errorMsg = '';
   const fs = require('fs');
   const logDir = './logs';
+  const today = new Date().toLocaleDateString();
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  const lastRowBeforeFill = await getLastRowGoogleSheet();
+
   if (!fs.existsSync(logDir)) {
     fs.mkdirSync(logDir, { recursive: true });
   }
 
   const logFile = `${logDir}/report.log`;
-  fs.appendFileSync(logFile, `${new Date().toISOString()} Начало отчета \n`);
+  fs.appendFileSync(
+    logFile,
+    `${today} ${new Date().toLocaleTimeString()} Начало отчета \n`,
+  );
 
   try {
     await createReportTimeByPeriod();
     await updateAllFiled();
     await updateIncomingCall();
   } catch (error) {
-    if (error instanceof Error)
+    if (error instanceof Error) {
+      errorMsg = error.message;
       fs.appendFileSync(
         logFile,
-        `${new Date().toISOString()} Ошибка отчета ${error.message}\n`,
+        `${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()} Ошибка отчета ${error.message}\n`,
       );
+    }
   } finally {
+    const startOfDay = new Date(yesterday);
+    const endOfDay = new Date(yesterday);
+
+    startOfDay.setHours(0, 0, 0, 0);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    // Конвертируем в Unix timestamp (секунды)
+    const startTimestamp = Math.floor(startOfDay.getTime() / 1000);
+    const endTimestamp = Math.floor(endOfDay.getTime() / 1000);
+
+    const allLeadByPeriod = await getLeadsToday(startTimestamp, endTimestamp);
+
+    const lastRow = await getLastRowGoogleSheet();
+    const sheetUpdates: {
+      range: string;
+      values: (string | number)[][];
+    }[] = [];
+
+    sheetUpdates.push({
+      range: `AN${lastRow}:AP`,
+      values: [[errorMsg, today, lastRow - lastRowBeforeFill]],
+    });
+    sheetUpdates.push({
+      range: `AQ${lastRowBeforeFill}`,
+      values: [[allLeadByPeriod.length]],
+    });
+
+    await updateFieldsGooglePack(sheetUpdates);
     fs.appendFileSync(logFile, `${new Date().toISOString()} Конец отчета \n`);
   }
 });

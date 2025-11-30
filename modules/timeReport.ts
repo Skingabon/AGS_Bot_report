@@ -1,5 +1,5 @@
 import { Context } from 'grammy';
-import { domain, getAllPipelines, getLeadToday } from '../services/apiAmo';
+import { domain, getAllPipelines, getLeadsToday } from '../services/apiAmo';
 import {
   createGoogleFields,
   getGoogleSheetData,
@@ -27,7 +27,7 @@ export const showReportLeadByPeriod = async (
     }
     const [startTimestamp, endTimestamp] = timeDate;
 
-    const response = await getLeadToday(startTimestamp, endTimestamp);
+    const response = await getLeadsToday(startTimestamp, endTimestamp);
     const totalLeads: number = response.length;
     let countSeries = 0;
     let countIng = 0;
@@ -216,7 +216,7 @@ export const createReportTimeByPeriod = async (
       endTimestamp = Math.floor(endDateFormated.getTime() / 1000);
     }
 
-    const response = await getLeadToday(startTimestamp, endTimestamp);
+    const response = await getLeadsToday(startTimestamp, endTimestamp);
 
     let leads = response;
     if (!leads || leads.length === 0) {
