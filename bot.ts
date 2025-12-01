@@ -25,6 +25,7 @@ import {
   updateFieldsGooglePack,
 } from './services/apiGoogleTable';
 import { getLeadsToday } from './services/apiAmo';
+import { formatDateMMDDYYYYByDate } from './util/helper';
 
 const bot = new Bot(process.env.BOT_API_KEY || '');
 
@@ -52,6 +53,7 @@ bot.callbackQuery('report-time-last-day', protectedReportTimeLastDay);
 bot.callbackQuery('report-time-period', protectedReportTimePeriod);
 bot.callbackQuery('send-google-link', protectedSendGoogleLink);
 bot.callbackQuery('report-marketing-period', protectedReportMarketing);
+bot.callbackQuery('test', async () => {});
 
 bot.callbackQuery('report-lead-yesterday', reportLeadYesterday);
 bot.callbackQuery('report-lead-today', reportLeadToday);
@@ -66,10 +68,10 @@ bot.callbackQuery(/cal_(prev|next)_(\d+)_(\d+)/, changeMonth);
 
 //Ежедневное заполнение отчета в 23.40
 cron.schedule('40 23 * * *', async () => {
-  let errorMsg = '';
+  let errorMsg = 'Без ошибок';
   const fs = require('fs');
   const logDir = './logs';
-  const today = new Date().toLocaleDateString();
+  const today = formatDateMMDDYYYYByDate(new Date());
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
 
@@ -80,10 +82,7 @@ cron.schedule('40 23 * * *', async () => {
   }
 
   const logFile = `${logDir}/report.log`;
-  fs.appendFileSync(
-    logFile,
-    `${today} ${new Date().toLocaleTimeString()} Начало отчета \n`,
-  );
+  fs.appendFileSync(logFile, `${today} Начало отчета \n`);
 
   try {
     await createReportTimeByPeriod();

@@ -1,4 +1,5 @@
 import { CustomFields } from '../interfaces';
+import { getLastRowGoogleSheet } from '../services/apiGoogleTable';
 
 export const getDate = (time: number): string => {
   const date = new Date(time * 1000);
@@ -232,9 +233,23 @@ export const parseDateTime = (dateString: string): Date | null => {
   }
 };
 
+export const formatDateMMDDYYYYByDate = (date: Date) => {
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0'); // месяцы с 0
+  const year = date.getFullYear();
+
+  return `${day}.${month}.${year}`;
+};
+
+// Получение стартовой строки за квартал
 export const startRangeWith = (flag: boolean, allRow: number) => {
-  const needRow = 1700;
   const firstRow = 2;
+  let needRow = 1700;
+
+  // Если строк меньше 1700 (квартал), то начинай с первой строки
+  if (needRow > allRow) {
+    needRow = firstRow;
+  }
 
   return flag ? firstRow : allRow - needRow;
 };

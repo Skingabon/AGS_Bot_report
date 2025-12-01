@@ -225,7 +225,7 @@ export const onChangeDatePeriod = async (ctx: Context) => {
     await updateAllFiled();
     await ctx.reply('Обрабатываю исходящие звонки');
     await updateIncomingCall();
-
+    await ctx.reply('Все готово!');
     delete calendarStates[userId];
   } else if (state.type === 'awaiting_start_date_marketing') {
     state.startDate = selectedDate;

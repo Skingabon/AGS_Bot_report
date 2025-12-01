@@ -465,6 +465,7 @@ export const updateIncomingCall = async (isAllField = false) => {
   }
 };
 
+// Обновить все поля
 export const updateAllFiled = async (isAllField = false) => {
   try {
     const rowLength = (await getGoogleSheetData('A')).flat().length + 1;
@@ -575,7 +576,6 @@ export const updateAllFiled = async (isAllField = false) => {
             nameProduct,
             dateFormatted,
           } = getParamsLead({ lead, pipelinesMap });
-          const { day, month, year } = dateFormatted;
 
           // Добавляем обновления
           sheetUpdates.push({
@@ -614,6 +614,8 @@ export const updateAllFiled = async (isAllField = false) => {
               ],
             ],
           });
+
+          const { day, month, year } = dateFormatted;
           sheetUpdates.push({
             range: `AH${rowNumber}:AJ${rowNumber}`,
             values: [[day, month, year]],
