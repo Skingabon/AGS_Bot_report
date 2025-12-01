@@ -427,7 +427,7 @@ export const updateIncomingCall = async (isAllField = false) => {
             range: `T${rowNumber}:V${rowNumber}`,
             values: [
               [
-                `${dateOutput} / ${incomingAction.source}ss`,
+                `${dateOutput} / ${incomingAction.source}`,
                 deltaTimeFirstResponse,
                 timeAllWork,
               ],
