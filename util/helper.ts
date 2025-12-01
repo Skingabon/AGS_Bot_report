@@ -1,7 +1,6 @@
 import { CustomFields } from '../interfaces';
-import { getLastRowGoogleSheet } from '../services/apiGoogleTable';
 
-export const getDate = (time: number): string => {
+export const getDate = (time: number): string[] => {
   const date = new Date(time * 1000);
 
   const year = date.getFullYear();
@@ -9,8 +8,11 @@ export const getDate = (time: number): string => {
   const day = `${date.getDate()}`.padStart(2, '0');
   const hours = `${date.getHours()}`.padStart(2, '0');
   const minutes = `${date.getMinutes()}`.padStart(2, '0');
+  const seconds = `${date.getSeconds()}`.padStart(2, '0');
 
-  return `${year}.${month}.${day} ${hours}:${minutes}`;
+  return [`${year}`, month, day, hours, minutes, seconds];
+
+  // return `${year}.${month}.${day} ${hours}:${minutes}`;
 };
 
 export const getPeriodTimestamps = (
@@ -245,11 +247,12 @@ export const formatDateMMDDYYYYByDate = (date: Date) => {
 export const startRangeWith = (flag: boolean, allRow: number) => {
   const firstRow = 2;
   let needRow = 1700;
+  let startRangeWith = allRow - needRow;
 
-  // Если строк меньше 1700 (квартал), то начинай с первой строки
+  // Если строк меньше 1700 (квартал), то начинай со второй строки
   if (needRow > allRow) {
-    needRow = firstRow;
+    startRangeWith = firstRow;
   }
 
-  return flag ? firstRow : allRow - needRow;
+  return flag ? firstRow : startRangeWith;
 };

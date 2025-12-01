@@ -34,7 +34,7 @@ export async function getGoogleSheetData(
 ): Promise<Array<string[]>> {
   const sheets = google.sheets({ version: 'v4', auth });
 
-  const lastRow = getLastRowGoogleSheet();
+  const lastRow = await getLastRowGoogleSheet();
   // Теперь запрашиваем только нужный диапазон
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,

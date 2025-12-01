@@ -267,7 +267,6 @@ export const updateIncomingCall = async (isAllField = false) => {
     const rowLength = (await getGoogleSheetData('A')).flat().length + 1;
     const startRange = startRangeWith(isAllField, rowLength);
     const allData = await getRangeValues(`A${startRange}:AL${rowLength}`);
-
     // Подготавливаем данные для пакетного обновления
     const sheetUpdates: {
       range: string;
@@ -332,7 +331,6 @@ export const updateIncomingCall = async (isAllField = false) => {
           skippedCount++;
           continue;
         }
-
         try {
           // Проверка валидности ID
           if (!idLeadFromTable) continue;
@@ -384,7 +382,11 @@ export const updateIncomingCall = async (isAllField = false) => {
           let timeAllWork = '-';
           const createdAtFormatted = formatDate(lead.created_at);
           const dateSaveCreatedAt = safeParseDate(createdAtFormatted);
-          const incomingDate = safeParseDate(getDate(incomingAction.time));
+          const [year, month, day, hours, minutes, seconds] = getDate(
+            incomingAction.time,
+          );
+          const dateOutput = `${year}.${month}.${day} ${hours}:${minutes}`;
+          const incomingDate = safeParseDate(dateOutput);
 
           if (incomingDate && dateSaveCreatedAt) {
             timeAllWork = formatDiff(
@@ -425,17 +427,18 @@ export const updateIncomingCall = async (isAllField = false) => {
             range: `T${rowNumber}:V${rowNumber}`,
             values: [
               [
-                `${getDate(incomingAction.time)} / ${incomingAction.source}`,
+                `${dateOutput} / ${incomingAction.source}ss`,
                 deltaTimeFirstResponse,
                 timeAllWork,
               ],
             ],
           });
+          sheetUpdates.push({
+            range: `AS${rowNumber}:AS${rowNumber}`,
+            values: [[`${hours}:${minutes}:${seconds}`]],
+          });
 
-          amoUpdatesPromises.push(
-            updateLeadDateCall(idLead, getDate(incomingAction.time)),
-          );
-
+          amoUpdatesPromises.push(updateLeadDateCall(idLead, dateOutput));
           processedCount++;
         } catch (err) {
           sheetUpdates.push({
