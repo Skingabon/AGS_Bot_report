@@ -235,6 +235,21 @@ export const parseDateTime = (dateString: string): Date | null => {
   }
 };
 
+export const formatSecondsToHHMM = (seconds: number): string => {
+  // Ограничиваем секунды положительными значениями
+  const totalSeconds = Math.max(0, Math.floor(seconds));
+
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  // Форматируем с ведущими нулями
+  const formattedHours = String(hours).padStart(2, '0');
+  const formattedMinutes = String(minutes).padStart(2, '0');
+
+  return `${formattedHours}:${formattedMinutes}`;
+};
+
 export const formatDateMMDDYYYYByDate = (date: Date) => {
   const day = String(date.getDate()).padStart(2, '0');
   const month = String(date.getMonth() + 1).padStart(2, '0'); // месяцы с 0

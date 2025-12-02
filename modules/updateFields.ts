@@ -2,6 +2,7 @@ import { isCallNote, isMessageNote, Lead } from '../interfaces';
 import {
   formatDate,
   formatDiff,
+  formatSecondsToHHMM,
   getDate,
   getFieldValue,
   parseCustomDate,
@@ -178,7 +179,8 @@ export const incomingActionDateFromContact = async (
       }
       if (isCallNote(el)) {
         //call_status === 4 значит звонок состоялся
-        if (el.note_type === 'call_out' && el.params.call_status === 4) {
+        // убрал status === 4. проверяем любые звонки
+        if (el.note_type === 'call_out') {
           communicationsDate.push({
             source: 'Звонок',
             time: el.created_at,
@@ -379,18 +381,13 @@ export const updateIncomingCall = async (isAllField = false) => {
 
           // Обработка данных...
           const fields = lead.custom_fields_values || [];
-          let timeAllWork = '-';
-          const createdAtFormatted = formatDate(lead.created_at);
-          const dateSaveCreatedAt = safeParseDate(createdAtFormatted);
-          const [year, month, day, hours, minutes, seconds] = getDate(
-            incomingAction.time,
-          );
-          const dateOutput = `${year}.${month}.${day} ${hours}:${minutes}`;
-          const incomingDate = safeParseDate(dateOutput);
 
-          if (incomingDate && dateSaveCreatedAt) {
-            timeAllWork = formatDiff(
-              incomingDate.getTime() - dateSaveCreatedAt.getTime(),
+          const createdAtLead = lead.created_at;
+
+          let timeAllWork = '-';
+          if (createdAtLead && incomingAction.time) {
+            timeAllWork = formatSecondsToHHMM(
+              incomingAction.time - createdAtLead,
             );
           }
 
@@ -410,6 +407,12 @@ export const updateIncomingCall = async (isAllField = false) => {
             : null;
           const omAssignedBy = getFieldValue(fields, 'ОМ Квал серия') || '';
 
+          const [year, month, day, hours, minutes, seconds] = getDate(
+            incomingAction.time,
+          );
+          const dateOutput = `${year}.${month}.${day} ${hours}:${minutes}`;
+          const incomingDate = safeParseDate(dateOutput);
+
           if (incomingDate) {
             if (omAssignedBy && assignedAtDate) {
               deltaTimeFirstResponse = formatDiff(
@@ -428,7 +431,7 @@ export const updateIncomingCall = async (isAllField = false) => {
             values: [
               [
                 `${dateOutput} / ${incomingAction.source}`,
-                deltaTimeFirstResponse,
+                deltaTimeFirstResponse || 'В сделке нет ОМ квал',
                 timeAllWork,
               ],
             ],
@@ -460,7 +463,7 @@ export const updateIncomingCall = async (isAllField = false) => {
       }
     }
 
-    await Promise.all(amoUpdatesPromises);
+    // await Promise.all(amoUpdatesPromises);
   } catch (err) {
     if (err instanceof Error) {
       console.error(`Глобальная ошибка: ${err.message}`);

@@ -53,7 +53,9 @@ bot.callbackQuery('report-time-last-day', protectedReportTimeLastDay);
 bot.callbackQuery('report-time-period', protectedReportTimePeriod);
 bot.callbackQuery('send-google-link', protectedSendGoogleLink);
 bot.callbackQuery('report-marketing-period', protectedReportMarketing);
-bot.callbackQuery('test', async () => {});
+bot.callbackQuery('test', async () => {
+  await updateIncomingCall();
+});
 
 bot.callbackQuery('report-lead-yesterday', reportLeadYesterday);
 bot.callbackQuery('report-lead-today', reportLeadToday);
