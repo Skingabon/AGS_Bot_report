@@ -3,6 +3,7 @@ import { ControlSheetService } from '../services/apiGoogleTable';
 import { getLeadsTodayOrByPeriod } from './utils';
 import { DOMAIN } from './contants';
 import {
+  communicationType,
   incomingActionDateFromContact,
   incomingCallDate,
 } from './updateFields';
@@ -100,6 +101,9 @@ export const updateReportControlDaily = async (): Promise<void> => {
       }
     });
 
+    // Для обновления базовых строк
+    const updatePromises: Promise<any>[] = [];
+
     // Идем снизу вверх
     for (let i = allRows.length - 1; i >= 0; i--) {
       const row = allRows[i];
@@ -169,7 +173,7 @@ export const updateReportControlDaily = async (): Promise<void> => {
           const actionKey = createActionKey(rowData);
           if (actionKey && !existingActions.has(actionKey)) {
             newRowsToInsert.push(rowData);
-            existingActions.add(actionKey); // Добавляем в кэш, чтобы не дублировать
+            existingActions.add(actionKey);
           }
         });
 
@@ -205,11 +209,138 @@ export const updateReportControlDaily = async (): Promise<void> => {
           }
         });
 
-        // Добавляем НОВЫЕ действия в конец таблицы
+        // 3. ОБНОВЛЯЕМ БАЗОВУЮ СТРОКУ, если она пустая
+        const isBaseRowEmpty = !row[5] && !row[6] && !row[7]; // F, G, H пустые
+
+        if (
+          isBaseRowEmpty &&
+          (communications.length > 0 || validTasks.length > 0)
+        ) {
+          // Берем первое действие для обновления базовой строки
+          let firstAction: any = null;
+
+          if (communications.length > 0) {
+            firstAction = communications[0];
+          } else if (validTasks.length > 0) {
+            firstAction = validTasks[0];
+          }
+
+          if (firstAction) {
+            let updateRowData: (string | number)[] = [];
+
+            // Type guard для коммуникаций
+            const isCommunication = (
+              action: any,
+            ): action is communicationType => {
+              return 'source' in action;
+            };
+
+            // Type guard для задач (предполагаем, что Task имеет поле duration)
+            const isTask = (
+              action: any,
+            ): action is {
+              created_at: number;
+              text?: string;
+              duration: number;
+            } => {
+              return 'duration' in action && 'created_at' in action;
+            };
+
+            if (isCommunication(firstAction)) {
+              // Это коммуникация
+              const touch = firstAction;
+              const [y, mon, d, h, m, s] = getDate(touch.time);
+
+              updateRowData = [
+                leadId, // A
+                row[1] || '', // B
+                row[2] || '', // C
+                row[3] || '', // D
+                '-', // E
+                touch.core || '', // F
+                touch.source || '', // G
+                touch.text || '', // H
+                `${touch.source} ${touch.source !== 'Примечание' ? (touch.income ? 'вход' : 'исх') : ''}`, // I
+                touch.source === 'Звонок'
+                  ? touch.isDoCall
+                    ? 'Да'
+                    : 'Нет'
+                  : '', // J
+                touch.source === 'Звонок' && touch.isDoCall
+                  ? formatTimeHHMMSS(touch.durationCall || 0)
+                  : '', // K
+                `${y}.${mon}.${d}`, // L
+                `${h}:${m}:${s}`, // M
+                '-', // N
+                row[14] || '', // O
+                row[15] || '', // P
+                row[16] || '', // Q
+                touch.linkCall || '', // R
+              ];
+            } else if (isTask(firstAction)) {
+              // Это задача
+              const task = firstAction;
+              const [y, mon, d, h, m, s] = getDate(task.created_at);
+
+              updateRowData = [
+                leadId, // A
+                row[1] || '', // B
+                row[2] || '', // C
+                row[3] || '', // D
+                '-', // E
+                'task', // F
+                'Задачи', // G
+                task.text || '', // H
+                'Встреча', // I
+                '', // J
+                '', // K
+                `${y}.${mon}.${d}`, // L
+                `${h}:${m}:${s}`, // M
+                formatTimeHHMMSS(task.duration), // N
+                row[14] || '', // O
+                row[15] || '', // P
+                row[16] || '', // Q
+                '-', // R
+              ];
+            } else {
+              // Если тип неизвестен, пропускаем обновление
+              console.log(`⚠️ Неизвестный тип действия для сделки ${leadId}`);
+            }
+
+            if (updateRowData.length) {
+              // Обновляем базовую строку
+              updatePromises.push(
+                sheetService.updateFieldsGooglePack([
+                  {
+                    range: `A${currentRowNumber}:R${currentRowNumber}`,
+                    values: [updateRowData],
+                  },
+                ]),
+              );
+
+              console.log(
+                `✏️ Будет обновлена базовая строка ${currentRowNumber} для сделки ${leadId}`,
+              );
+
+              // Убираем это действие из newRowsToInsert, если оно там есть
+              const actionKey = createActionKey(updateRowData);
+              const actionIndex = newRowsToInsert.findIndex(
+                (r) => createActionKey(r) === actionKey,
+              );
+              if (actionIndex !== -1) {
+                newRowsToInsert.splice(actionIndex, 1);
+              }
+            }
+          }
+        }
+
+        // 4. Добавляем ОСТАЛЬНЫЕ НОВЫЕ действия в конец таблицы
         if (newRowsToInsert.length > 0) {
-          await sheetService.createGoogleFields({ values: newRowsToInsert });
+          updatePromises.push(
+            sheetService.createGoogleFields({ values: newRowsToInsert }),
+          );
           console.log(
-            `✅ Добавлено ${newRowsToInsert.length} новых действий для сделки ${leadId}`,
+            `➕ Добавлено ${newRowsToInsert.length} новых действий для сделки ${leadId}`,
           );
         } else {
           console.log(`⏭️ Для сделки ${leadId} нет новых действий`);
@@ -218,6 +349,12 @@ export const updateReportControlDaily = async (): Promise<void> => {
         if (error instanceof Error)
           console.error(`❌ Ошибка обработки сделки ${leadId}:`, error.message);
       }
+    }
+
+    // Выполняем все обновления
+    if (updatePromises.length > 0) {
+      await Promise.all(updatePromises);
+      console.log(`✅ Все обновления выполнены`);
     }
 
     console.log(`✅ Обновление полей завершено`);
