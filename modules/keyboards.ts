@@ -30,7 +30,6 @@ export const getBossMenu = () => {
     .row()
     .text('Создать отчет за выбранный период', 'report-time-period')
     .row()
-    //TODO Изменить логику заполнения поля Первое качание - если дата/время первого касапния младше даты создания сделки....
     .text('Исх. звонки и все поля за квартал', 'generate-for-quartet')
     .row()
     .text('Сортировка за квартал', 'sort-for-quartet')
@@ -41,12 +40,10 @@ export const getBossMenu = () => {
     .row()
     .text('⚠️ Сортировка всей таблицы', 'sort-all')
     .row()
+    .text('Создать отчет Control', 'create-report-control')
+    .row()
     .text('Вернуться в меню', 'menu')
     .row();
 
   return bossMenu;
-};
-
-export const getCancelKeyboard = (): InlineKeyboard => {
-  return new InlineKeyboard().text('⏹️ Отменить', 'cancel_command').row();
 };

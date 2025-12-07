@@ -1,177 +1,218 @@
-//TODO: заменить на нужное ID таблицы
 import 'dotenv/config';
-import { google } from 'googleapis';
+import { google, GoogleApis } from 'googleapis';
 import { parseDateTime, startRangeWith } from '../util/helper';
+import { GoogleAuth } from 'google-auth-library';
 
-const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
-const SHEET_NAME = 'Time';
-const auth = new google.auth.GoogleAuth({
-  keyFile: process.env.PATH_API_GOOGLE,
-  scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-});
+// Базовый класс для работы с Google Sheets
+export class GoogleSheetService {
+  protected readonly SPREADSHEET_ID: string;
+  protected readonly auth: GoogleAuth;
+  protected readonly google: GoogleApis;
+  protected sheetName: string;
 
-// Ищу номер последней строки
-export async function getLastRowGoogleSheet() {
-  const sheets = google.sheets({ version: 'v4', auth });
+  constructor(sheetName: string) {
+    this.SPREADSHEET_ID = process.env.SPREADSHEET_ID!;
+    this.sheetName = sheetName;
+    this.auth = new google.auth.GoogleAuth({
+      keyFile: process.env.PATH_API_GOOGLE,
+      scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+    });
+    this.google = google;
+  }
 
-  // Сначала получаем все строки в выбранном столбце, начиная со второй
-  const columnResponse = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEET_NAME}!A2:A`,
-  });
+  // Ищу номер последней строки
+  async getLastRowGoogleSheet(): Promise<number> {
+    const sheets = this.google.sheets({ version: 'v4', auth: this.auth });
 
-  const values = columnResponse.data.values || [];
+    const columnResponse = await sheets.spreadsheets.values.get({
+      spreadsheetId: this.SPREADSHEET_ID,
+      range: `${this.sheetName}!A2:A`,
+    });
 
-  // Вычисляем последнюю строку с данными
-  const lastRow = values.length + 1; // +1, так как данные начинаются со 2-й строки
+    const values = columnResponse.data.values || [];
+    return values.length + 1;
+  }
 
-  return lastRow;
-}
+  // Получаю все строки в столбце
+  async getGoogleSheetData(field: string = 'A'): Promise<Array<string[]>> {
+    const sheets = this.google.sheets({ version: 'v4', auth: this.auth });
+    const lastRow = await this.getLastRowGoogleSheet();
 
-// Получаю все строки в столбце
-export async function getGoogleSheetData(
-  field: string = 'A',
-): Promise<Array<string[]>> {
-  const sheets = google.sheets({ version: 'v4', auth });
-
-  const lastRow = await getLastRowGoogleSheet();
-  // Теперь запрашиваем только нужный диапазон
-  const response = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEET_NAME}!${field}2:${field}${lastRow}`,
-  });
-
-  return response.data.values || [];
-}
-
-// Получаю все поля из таблицы
-export async function getRangeValues(range: string): Promise<Array<string[]>> {
-  const sheets = google.sheets({ version: 'v4', auth });
-
-  try {
     const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: `${SHEET_NAME}!${range}`,
-      valueRenderOption: 'FORMATTED_VALUE',
+      spreadsheetId: this.SPREADSHEET_ID,
+      range: `${this.sheetName}!${field}2:${field}${lastRow}`,
     });
 
     return response.data.values || [];
-  } catch (error) {
-    console.error(`Ошибка получения диапазона ${range}:`, error);
-    return [];
   }
-}
 
-export async function updateGoogleField(
-  data: string,
-  index: number,
-  fieldName: string = 'T',
-) {
-  const sheets = google.sheets({ version: 'v4', auth });
-  const res = await sheets.spreadsheets.values.update({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEET_NAME}!${fieldName}${index}`,
-    valueInputOption: 'RAW',
-    requestBody: { values: [[data]] },
-  });
+  // Получаю все поля из таблицы
+  async getRangeValues(range: string): Promise<Array<string[]>> {
+    const sheets = this.google.sheets({ version: 'v4', auth: this.auth });
 
-  return res;
-}
+    try {
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: this.SPREADSHEET_ID,
+        range: `${this.sheetName}!${range}`,
+        valueRenderOption: 'FORMATTED_VALUE',
+      });
 
-type LeadRow = {
-  values: (string | number)[][];
-};
-
-export async function createGoogleFields(data: LeadRow) {
-  const sheets = google.sheets({ version: 'v4', auth });
-  await sheets.spreadsheets.values.append({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEET_NAME}!A1`, // Диапазон, начиная с первой строки
-    valueInputOption: 'RAW',
-    requestBody: {
-      values: data.values,
-    },
-  });
-}
-
-type sheetUpdates = { range: string; values: (string | number)[][] };
-
-export const updateFieldsGooglePack = async (sheetUpdates: sheetUpdates[]) => {
-  const sheets = google.sheets({ version: 'v4', auth });
-
-  // Добавляем название листа к каждому range
-  const updatesWithSheet = sheetUpdates.map((update) => ({
-    ...update,
-    range: `${SHEET_NAME}!${update.range}`,
-  }));
-
-  await sheets.spreadsheets.values.batchUpdate({
-    spreadsheetId: SPREADSHEET_ID,
-    requestBody: {
-      data: updatesWithSheet,
-      valueInputOption: 'RAW',
-    },
-  });
-};
-
-// utils/sheetSorter.ts
-export const sortSheetByDate = async (isAllField = false): Promise<void> => {
-  const sheets = google.sheets({ version: 'v4', auth });
-  const lastRow = 'AL';
-
-  try {
-    const rowLength = (await getGoogleSheetData('A')).flat().length + 1;
-    const startRange = startRangeWith(isAllField, rowLength);
-    // Получаем данные
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: `${SHEET_NAME}!A${startRange}:${lastRow}`,
-    });
-
-    const data = response.data.values || [];
-    if (data.length === 0) {
-      console.log('Нет данных для сортировки');
-      return;
+      return response.data.values || [];
+    } catch (error) {
+      console.error(`Ошибка получения диапазона ${range}:`, error);
+      return [];
     }
+  }
 
-    // Добавляем отладочную информацию
-    const dataWithDebug = data.map((row, index) => {
-      const dateString = row[6]; // столбец G
-      const parsedDate = parseDateTime(dateString);
-
-      return {
-        originalIndex: index,
-        row: row,
-        dateString: dateString,
-        parsedDate: parsedDate,
-        timestamp: parsedDate ? parsedDate.getTime() : 0,
-      };
+  async updateGoogleField(
+    data: string,
+    index: number,
+    fieldName: string = 'T',
+  ) {
+    const sheets = this.google.sheets({ version: 'v4', auth: this.auth });
+    const res = await sheets.spreadsheets.values.update({
+      spreadsheetId: this.SPREADSHEET_ID,
+      range: `${this.sheetName}!${fieldName}${index}`,
+      valueInputOption: 'RAW',
+      requestBody: { values: [[data]] },
     });
 
-    // Сортируем по timestamp
-    const sortedWithDebug = dataWithDebug.sort((a, b) => {
-      // Сначала валидные даты, потом невалидные
-      if (!a.parsedDate && !b.parsedDate) return 0;
-      if (!a.parsedDate) return 1;
-      if (!b.parsedDate) return -1;
+    return res;
+  }
 
-      return a.timestamp - b.timestamp; // по возрастанию
-    });
-
-    // Извлекаем только строки
-    const sortedData = sortedWithDebug.map((item) => item.row);
-
-    // Записываем обратно
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: SPREADSHEET_ID,
-      range: `${SHEET_NAME}!A${startRange}:${lastRow}`,
+  async createGoogleFields(data: { values: (string | number)[][] }) {
+    const sheets = this.google.sheets({ version: 'v4', auth: this.auth });
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: this.SPREADSHEET_ID,
+      range: `${this.sheetName}!A1`,
       valueInputOption: 'RAW',
       requestBody: {
-        values: sortedData,
+        values: data.values,
       },
     });
-  } catch (error) {
-    console.error('Ошибка сортировки:', error);
-    throw error;
   }
-};
+
+  async updateFieldsGooglePack(
+    sheetUpdates: { range: string; values: (string | number)[][] }[],
+  ) {
+    const sheets = this.google.sheets({ version: 'v4', auth: this.auth });
+
+    const updatesWithSheet = sheetUpdates.map((update) => ({
+      ...update,
+      range: `${this.sheetName}!${update.range}`,
+    }));
+
+    const filteredUpdates = updatesWithSheet.filter((u) => u.values.length > 0);
+    if (filteredUpdates.length > 0) {
+      await sheets.spreadsheets.values.batchUpdate({
+        spreadsheetId: this.SPREADSHEET_ID,
+        requestBody: {
+          data: filteredUpdates,
+          valueInputOption: 'RAW',
+        },
+      });
+    }
+  }
+  async sortSheetByDate(
+    isAllField: boolean = false,
+    columnIndexForSorting: number = 6,
+  ): Promise<void> {
+    const sheets = this.google.sheets({ version: 'v4', auth: this.auth });
+    const lastRow = 'AL';
+
+    try {
+      const rowLength = (await this.getGoogleSheetData('A')).flat().length + 1;
+      const startRange = startRangeWith(isAllField, rowLength);
+
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: this.SPREADSHEET_ID,
+        range: `${this.sheetName}!A${startRange}:${lastRow}`,
+      });
+
+      const data: any[][] = response.data.values || [];
+      if (data.length === 0) {
+        console.log('Нет данных для сортировки');
+        return;
+      }
+
+      const dataWithDebug = data.map((row, index) => {
+        const dateString = row[columnIndexForSorting];
+        const parsedDate = parseDateTime(dateString);
+
+        return {
+          originalIndex: index,
+          row: row,
+          dateString: dateString,
+          parsedDate: parsedDate,
+          timestamp: parsedDate ? parsedDate.getTime() : 0,
+        };
+      });
+
+      const sortedWithDebug = dataWithDebug.sort((a, b) => {
+        if (!a.parsedDate && !b.parsedDate) return 0;
+        if (!a.parsedDate) return 1;
+        if (!b.parsedDate) return -1;
+
+        return a.timestamp - b.timestamp;
+      });
+
+      const sortedData = sortedWithDebug.map((item) => item.row);
+
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: this.SPREADSHEET_ID,
+        range: `${this.sheetName}!A${startRange}:${lastRow}`,
+        valueInputOption: 'RAW',
+        requestBody: {
+          values: sortedData,
+        },
+      });
+    } catch (error) {
+      console.error('Ошибка сортировки:', error);
+      throw error;
+    }
+  }
+}
+
+// Специализированный класс для листа Time с дополнительной логикой
+export class TimeSheetService extends GoogleSheetService {
+  constructor() {
+    super('Time'); // Всегда работаем с листом Time
+  }
+}
+
+// Специализированный класс для листа Control
+export class ControlSheetService extends GoogleSheetService {
+  constructor() {
+    super('Control'); // Всегда работаем с листом Control
+  }
+
+  // Здесь можно добавить специфичные методы для Control
+  async updateGoogleFieldsBatch(
+    values: (string | number)[][],
+    rangeStart: number = 2,
+  ): Promise<void> {
+    const sheets = this.google.sheets({ version: 'v4', auth: this.auth });
+    const batchSize = 50;
+
+    for (let i = 0; i < values.length; i += batchSize) {
+      const chunk = values.slice(i, i + batchSize);
+
+      const startRow = rangeStart + i;
+      const endRow = startRow + chunk.length - 1;
+
+      const range = `${this.sheetName}!A${startRow}:Z${endRow}`; // Z → сколько нужно
+
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: this.SPREADSHEET_ID,
+        range,
+        valueInputOption: 'RAW',
+        requestBody: {
+          values: chunk,
+        },
+      });
+
+      // Anti-429 пауза
+      await new Promise((res) => setTimeout(res, 150));
+    }
+  }
+}

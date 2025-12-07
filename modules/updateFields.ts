@@ -1,4 +1,4 @@
-import { isCallNote, isMessageNote, Lead } from '../interfaces';
+import { isMessageNote, Lead } from '../interfaces';
 import {
   formatDate,
   formatDiff,
@@ -6,250 +6,190 @@ import {
   getDate,
   getFieldValue,
   parseCustomDate,
-  parseDate,
   safeParseDate,
   startRangeWith,
 } from '../util/helper';
 import {
-  getAllPipelines,
-  getContactsByIdLead,
-  getLeadById,
-  getNotesByIdContact,
-  getNotesByLead,
-  updateLeadDateCall,
-} from '../services/apiAmo';
-import {
-  getGoogleSheetData,
-  getRangeValues,
-  sortSheetByDate,
-  updateFieldsGooglePack,
+  ControlSheetService,
+  TimeSheetService,
 } from '../services/apiGoogleTable';
-import { statusMap } from './statusList';
+import { AmoAPI } from '../services/apiAmo';
+import { getParamsLead } from './utils';
 
-export const getStatusLead = (lead: Lead): string => {
-  return (
-    statusMap[lead.status_id] || `Неизвестный статус (ID: ${lead.status_id})`
-  );
+type requiredCommunicationType = {
+  id: number;
+  source: 'Письмо' | 'Звонок' | 'Примечание';
+  time: number;
+  core: 'contact' | 'note' | 'task';
 };
 
-type getParamsLeadType = {
-  lead: Lead;
-  pipelinesMap: { [p: number]: string };
+type partialCommunicationType = {
+  durationCall: number | null;
+  text: string;
+  income: boolean;
+  isDoCall: boolean;
+  linkCall: string;
 };
 
-export const getParamsLead = ({ lead, pipelinesMap }: getParamsLeadType) => {
-  const pipelineName = pipelinesMap[lead.pipeline_id] || 'Не найдено';
+export type communicationType = requiredCommunicationType &
+  Partial<partialCommunicationType>;
 
-  // Добавляем название статуса в зависимости от ID статуса
-  //Заменить на switch case
-  const statusName = getStatusLead(lead);
-
-  //новые поля
-  const fields = lead.custom_fields_values || [];
-  const newLeadSourse = getFieldValue(fields, 'Источник лида') || '';
-  const reasonForRefusal = getFieldValue(fields, 'Причина отказа') || '';
-  const dateContract = getFieldValue(fields, 'Дата Договор заключен');
-  const dateNoLead = getFieldValue(fields, 'Дата Не целевой лид');
-  const totalTimeLead = formatDate(dateContract || dateNoLead);
-  const nameIndustry = getFieldValue(fields, 'Отрасль') || '';
-  const nameProduct = getFieldValue(fields, 'Оборудование') || '';
-
-  const omTakenAt = formatDate(
-    getFieldValue(fields, 'Дата/время взято в работу'),
-  ); // Форматируем сразу
-  const omTakenBy = getFieldValue(fields, 'ОМ Взято в работу') || '';
-
-  const omAssignedAt = formatDate(getFieldValue(fields, 'Время ОМ квал серия'));
-  const omAssignedBy = getFieldValue(fields, 'ОМ Квал серия') || '';
-  const omTakenByIng = getFieldValue(fields, 'ОМ Квал инж') || '';
-  const omRaspredByIng = getFieldValue(fields, 'Распр ОМ квал ИНЖ') || '';
-  const omRaspredByIngTime = formatDate(
-    getFieldValue(fields, 'Время Распр ОМ квал ИНЖ'),
-  );
-  const omTakeIng = formatDate(getFieldValue(fields, 'Дата/время КВАЛ инж'));
-
-  // Берем нужные даты
-  const createdDate = new Date(lead.created_at * 1000);
-  const createdAtFormatted = formatDate(lead.created_at); // "2025.04.22 15:30"
-  const dateFormatted = parseDate(createdAtFormatted);
-  const takenDate = omTakenAt ? parseCustomDate(omTakenAt) : null; // Парсим обратно, если нужно
-  const takeIngDate = omTakeIng ? parseCustomDate(omTakeIng) : null;
-  const assignedDate = omAssignedAt ? parseCustomDate(omAssignedAt) : null;
-
-  // Вычисляем разницу
-  let diffCreatedToTaken = '';
-  if (takenDate && !isNaN(takenDate.getTime())) {
-    const diffMs = takenDate.getTime() - createdDate.getTime();
-    diffCreatedToTaken = formatDiff(diffMs);
-  }
-
-  let diffTakenToTakeIng: string;
-  if (
-    takenDate &&
-    takeIngDate &&
-    !isNaN(takenDate.getTime()) &&
-    !isNaN(takeIngDate.getTime())
-  ) {
-    const diffMs = takeIngDate.getTime() - takenDate.getTime();
-
-    diffTakenToTakeIng = formatDiff(diffMs);
-  } else {
-    diffTakenToTakeIng = '';
-  }
-
-  let diffAssignedToTaken = '';
-  if (
-    takenDate &&
-    assignedDate &&
-    !isNaN(takenDate.getTime()) &&
-    !isNaN(assignedDate.getTime())
-  ) {
-    const diffMs = assignedDate.getTime() - takenDate.getTime();
-    diffAssignedToTaken = formatDiff(diffMs);
-  }
-
-  // Разница между распределением на инженера и тем, когда рук отдела взял в работу
-  let diffIngRukManeger = '';
-  const raspredIngDate = omRaspredByIngTime
-    ? parseCustomDate(omRaspredByIngTime)
-    : null;
-  const takeIngDateForDiff = omTakeIng ? parseCustomDate(omTakeIng) : null;
-
-  if (
-    raspredIngDate &&
-    takeIngDateForDiff &&
-    !isNaN(raspredIngDate.getTime()) &&
-    !isNaN(takeIngDateForDiff.getTime())
-  ) {
-    const diffMs = takeIngDateForDiff.getTime() - raspredIngDate.getTime();
-    diffIngRukManeger = formatDiff(diffMs);
-  }
-
-  const date = new Date(lead.updated_at * 1000);
-  const formattedUpdatedAt = `${date.toLocaleDateString('ru-RU')} ${date.toLocaleTimeString('ru-RU')}`;
-
-  return {
-    newLeadSourse, // 4 D Источник сделки
-    statusName, // 5 E Название статуса
-    pipelineName, // 6 F Название воронки
-    createdAtFormatted, // 7 G Создан
-    omTakenAt, // 8 H ДатаВремя "ОМ Взято в работу"
-    diffCreatedToTaken, // 9 I Дельта Взято в работу - Создание ВРЕМЯ
-    omTakenBy, // 10 J Рук отдела Менеджер "ОМ Взято в работу"
-    omAssignedAt, //11 K На серию. ДатаВремя "Время ОМ квал серия"
-    diffAssignedToTaken, // 12 L Дельта На серию - Взято в работу  ВРЕМЯ
-    omAssignedBy, // 13 M Менеджер Серии "ОМ Квал серия"
-    omTakeIng, // 14 N Распределен на инжиниринг
-    diffTakenToTakeIng, //15 O На инж - Взято в работу
-    omTakenByIng, // 16 Р Кто распределил наинжиниринг "ОМ Квал ИНЖ"
-    omRaspredByIngTime, // 17 Q Время распределения на менеджера инжиниринга "Время Распр ОМ квал ИНЖ"
-    diffIngRukManeger, // 18 R  Дельта распредления Кто распределил на менеджера
-    omRaspredByIng,
-    formattedUpdatedAt, // 19 W Дата/время последнего обновления в сделке
-    reasonForRefusal, // X причина отказа
-    totalTimeLead, // Z
-    nameIndustry, // AA
-    nameProduct, //AB
-    dateFormatted, // Дата формата: 22 4 25
-  };
+type returnFirstTouch = {
+  firstTouch: communicationType | null;
+  communications: communicationType[];
 };
-
-type communicationType = { source: string; time: number };
 
 export const incomingActionDateFromContact = async (
   idLead: number,
   leadCreateDate: number,
-): Promise<null | communicationType> => {
+): Promise<returnFirstTouch> => {
   try {
-    const res = await getContactsByIdLead(idLead);
+    const res = await new AmoAPI().getContactsByIdLead(idLead);
     const contactId = res[0].to_entity_id;
-    const noteContact = await getNotesByIdContact(contactId);
-    let communicationsDate: communicationType[] = [];
+    const noteContact = await new AmoAPI().getNotesByIdContact(contactId);
+    let communications: communicationType[] = [];
 
     noteContact.map((el) => {
       // Берем сделки, где звонки не старше самой сделки
       if (el.created_at < leadCreateDate) return;
       if (isMessageNote(el)) {
-        if (!el.params.income) {
-          communicationsDate.push({
-            source: 'Сбщ',
-            time: el.params.delivery.time,
-          });
-        }
+        communications.push({
+          id: el.id,
+          source: 'Письмо',
+          time: el.params.delivery.time,
+          durationCall: null,
+          text: el.params.subject,
+          income: el.params.income,
+          core: 'contact',
+        });
       }
-      if (isCallNote(el)) {
-        //call_status === 4 значит звонок состоялся
-        // убрал status === 4. проверяем любые звонки
-        if (el.note_type === 'call_out') {
-          communicationsDate.push({
-            source: 'Звонок',
-            time: el.created_at,
-          });
-        }
-      }
+      // if (isCallNote(el)) {
+      //call_status === 4 значит звонок состоялся
+      // убрал status === 4. проверяем любые звонки
+      communications.push({
+        id: el.id,
+        source: 'Звонок',
+        time: el.created_at,
+        durationCall: el.params.duration,
+        income: el.note_type === 'call_in',
+        isDoCall: el.params.call_status === 4,
+        core: 'contact',
+        linkCall: el.params.link,
+      });
+      // }
     });
-    if (!communicationsDate.length) {
-      return null;
+    if (!communications.length) {
+      return { firstTouch: null, communications: [] };
     }
 
-    communicationsDate.sort((a, b) => a.time - b.time);
+    const sortedCommuns = [...communications]
+      .filter((el) => !el.income)
+      .sort((a, b) => a.time - b.time);
     // if (!incomingMessages) return null; // Нет писем
 
-    const firstMessageDate = communicationsDate[0];
-    if (!firstMessageDate) return null;
+    const firstTouch = sortedCommuns[0] || null;
 
-    return firstMessageDate;
+    return { firstTouch, communications };
   } catch (err) {
     if (err instanceof Error) {
       console.error(`Глобальная ошибка: ${err.message}`);
     }
-    return null;
+    return { firstTouch: null, communications: [] };
   }
 };
 
-const incomingCallDate = async (
+export const incomingCallDate = async (
   idLead: number,
-): Promise<null | communicationType> => {
+): Promise<returnFirstTouch> => {
   try {
-    const notes = await getNotesByLead(idLead);
-    if (!notes || notes.length === 0) return null;
+    const notes = await new AmoAPI().getNotesByLead(idLead);
+    if (!notes || notes.length === 0)
+      return { firstTouch: null, communications: [] };
 
-    const outgoingCalls = notes
-      .filter((el) => el.note_type === 'call_out')
-      .sort((a, b) => a.created_at - b.created_at);
+    const communications: communicationType[] = [];
 
-    const firstCall = outgoingCalls[0];
-    if (!firstCall) return null;
+    notes.map((el) => {
+      if (el.note_type === 'call_out' || el.note_type === 'call_in') {
+        communications.push({
+          id: el.id,
+          source: 'Звонок',
+          time: el.created_at,
+          durationCall: el.params.duration,
+          income: el.note_type === 'call_in',
+          isDoCall: el.params.call_status === 4,
+          core: 'note',
+          linkCall: el.params.link,
+        });
+      }
+      if (el.note_type === 'amomail_message') {
+        communications.push({
+          id: el.id,
+          source: 'Письмо',
+          time: el.created_at,
+          durationCall: null,
+          text: el.params.subject,
+          income: el.params.income,
+          core: 'note',
+        });
+      }
+      if (el.note_type === 'common') {
+        communications.push({
+          id: el.id,
+          source: 'Примечание',
+          time: el.created_at,
+          text: el.params.text,
+          core: 'note',
+        });
+      }
+    });
 
-    const date = firstCall.created_at;
+    if (!communications.length) {
+      return { firstTouch: null, communications: [] };
+    }
 
-    return { source: 'Звонок', time: date };
+    const outgoingCalls = [...communications]
+      .filter((el) => !el.income && el.source !== 'Примечание')
+      .sort((a, b) => a.time - b.time);
+
+    const firstTouch = outgoingCalls[0] || null;
+
+    return { firstTouch, communications };
   } catch (err) {
     if (err instanceof Error) {
       console.error(`Глобальная ошибка: ${err.message}`);
     }
-    return null;
+    return { firstTouch: null, communications: [] };
   }
 };
 
 async function getCreatedAtIncomingCallOrMessage(
   lead: Lead,
 ): Promise<communicationType | null> {
-  let incomingAction = await incomingActionDateFromContact(
-    lead.id,
-    lead.created_at,
-  );
-  const incomingCall = await incomingCallDate(lead.id);
+  // Из контактов и заметок
+  const [incomingFromContacts, incomingFromNotes] = await Promise.all([
+    incomingActionDateFromContact(lead.id, lead.created_at),
+    incomingCallDate(lead.id),
+  ]);
 
-  if (!incomingAction) {
-    return incomingCall;
+  const firstTouchContacts = incomingFromContacts.firstTouch;
+  const firstTouchNotes = incomingFromNotes.firstTouch;
+
+  if (!firstTouchContacts && firstTouchNotes) {
+    return firstTouchNotes;
   }
 
-  if (incomingCall && incomingAction.time < incomingCall.time) {
-    return incomingAction;
-  } else {
-    return incomingCall;
+  if (!firstTouchNotes && firstTouchContacts) {
+    return firstTouchContacts;
   }
+
+  if (firstTouchContacts && firstTouchNotes) {
+    if (firstTouchContacts.time < firstTouchNotes.time) {
+      return firstTouchContacts;
+    } else {
+      return firstTouchNotes;
+    }
+  }
+  return null;
 }
 
 function isInvalidDateIncoming({
@@ -262,13 +202,31 @@ function isInvalidDateIncoming({
   return createAtLead > createAtIncoming;
 }
 
+// Получить все действия с сделкой
+export const getAllAction = async () => {
+  try {
+    const ids = (
+      await new ControlSheetService().getGoogleSheetData('A')
+    ).flat();
+    console.log(ids);
+    //
+    // const fromContact = await incomingActionDateFromContact(ids[0][0], ids[0][0]);
+    // const fromNotes = await incomingCallDate(28936593);
+  } catch (err) {
+    if (err instanceof Error) console.log(err.message);
+  }
+};
+
 //Заполняю звонки за прошлые периоды если их небыло раньше
 export const updateIncomingCall = async (isAllField = false) => {
   try {
     // Получаем данные из таблицы
-    const rowLength = (await getGoogleSheetData('A')).flat().length + 1;
+    const rowLength =
+      (await new TimeSheetService().getGoogleSheetData('A')).flat().length + 1;
     const startRange = startRangeWith(isAllField, rowLength);
-    const allData = await getRangeValues(`A${startRange}:AL${rowLength}`);
+    const allData = await new TimeSheetService().getRangeValues(
+      `A${startRange}:AL${rowLength}`,
+    );
     // Подготавливаем данные для пакетного обновления
     const sheetUpdates: {
       range: string;
@@ -346,7 +304,7 @@ export const updateIncomingCall = async (isAllField = false) => {
             continue;
           }
 
-          const lead = await getLeadById(idLead);
+          const lead = await new AmoAPI().getLeadById(idLead);
 
           if (!lead) {
             sheetUpdates.push({
@@ -441,7 +399,9 @@ export const updateIncomingCall = async (isAllField = false) => {
             values: [[`${hours}:${minutes}:${seconds}`]],
           });
 
-          amoUpdatesPromises.push(updateLeadDateCall(idLead, dateOutput));
+          amoUpdatesPromises.push(
+            new AmoAPI().updateLeadDateCall(idLead, dateOutput),
+          );
           processedCount++;
         } catch (err) {
           sheetUpdates.push({
@@ -458,12 +418,12 @@ export const updateIncomingCall = async (isAllField = false) => {
 
       // Пакетное обновление
       if (sheetUpdates.length > 0) {
-        await updateFieldsGooglePack(sheetUpdates);
+        await new TimeSheetService().updateFieldsGooglePack(sheetUpdates);
         sheetUpdates.length = 0;
       }
     }
 
-    // await Promise.all(amoUpdatesPromises);
+    await Promise.all(amoUpdatesPromises);
   } catch (err) {
     if (err instanceof Error) {
       console.error(`Глобальная ошибка: ${err.message}`);
@@ -474,9 +434,12 @@ export const updateIncomingCall = async (isAllField = false) => {
 // Обновить все поля
 export const updateAllFiled = async (isAllField = false) => {
   try {
-    const rowLength = (await getGoogleSheetData('A')).flat().length + 1;
+    const rowLength =
+      (await new TimeSheetService().getGoogleSheetData('A')).flat().length + 1;
     const startRange = startRangeWith(isAllField, rowLength);
-    const allData = await getRangeValues(`A${startRange}:AL${rowLength}`);
+    const allData = await new TimeSheetService().getRangeValues(
+      `A${startRange}:AL${rowLength}`,
+    );
 
     // Подготавливаем данные для пакетного обновления
     const sheetUpdates: {
@@ -484,7 +447,7 @@ export const updateAllFiled = async (isAllField = false) => {
       values: (string | number)[][];
     }[] = [];
 
-    const pipelinesResponse = await getAllPipelines();
+    const pipelinesResponse = await new AmoAPI().getAllPipelines();
     const pipelines = pipelinesResponse;
     const pipelinesMap = pipelines.reduce(
       (
@@ -543,7 +506,7 @@ export const updateAllFiled = async (isAllField = false) => {
             continue;
           }
 
-          const lead = await getLeadById(idLead);
+          const lead = await new AmoAPI().getLeadById(idLead);
 
           // Обрабатываем случай когда сделка не найдена (204 No Content)
           if (!lead) {
@@ -651,7 +614,7 @@ export const updateAllFiled = async (isAllField = false) => {
       // Пакетное обновление
       if (sheetUpdates.length > 0) {
         try {
-          await updateFieldsGooglePack(sheetUpdates);
+          await new TimeSheetService().updateFieldsGooglePack(sheetUpdates);
           sheetUpdates.length = 0;
         } catch (updateError) {
           console.error('Ошибка при обновлении Google Sheets:', updateError);

@@ -9,7 +9,14 @@ import { sendGoogleSheetLinkByEmail } from './emailSender';
 import { isHasAccess } from '../auth/auth';
 import { TelegramCalendar } from '../util/calendar';
 import { getBaseMenu, getBossMenu } from './keyboards';
-import { sortSheetByDate } from '../services/apiGoogleTable';
+import {
+  ControlSheetService,
+  TimeSheetService,
+} from '../services/apiGoogleTable';
+import {
+  createReportControlByPeriod,
+  updateReportControlDaily,
+} from './controlReport';
 
 export let botContext: Context | null = null;
 
@@ -111,7 +118,7 @@ export const protectedSetIncomingCall = async (
   await ctx.reply('Обрабатываю исходящие звонки');
   await updateIncomingCall(isFillAllField);
   await ctx.reply('Делаю сортировку');
-  await sortSheetByDate(isFillAllField);
+  await new TimeSheetService().sortSheetByDate(isFillAllField);
   await ctx.reply('Все готово!');
 };
 
@@ -123,7 +130,7 @@ export const protectedReportTimeLastDay = async (ctx: Context) => {
   await ctx.reply('Обрабатываю исходящие звонки');
   await updateIncomingCall();
   await ctx.reply('Делаю сортировку');
-  await sortSheetByDate();
+  await new TimeSheetService().sortSheetByDate();
   await ctx.reply('Все готово!');
 };
 
@@ -148,8 +155,18 @@ export const protectedSendGoogleLink = async (ctx: Context) => {
 
 export const sortTableByDate = async (ctx: Context, isFillAllField = false) => {
   await ctx.reply('Начинаю сортировку');
-  await sortSheetByDate(isFillAllField);
+  await new TimeSheetService().sortSheetByDate(isFillAllField);
   await ctx.reply('Готово');
+};
+
+export const createAndUpdateControl = async (ctx: Context) => {
+  await ctx.reply('Начинаю работать с таблицей Control');
+  await createReportControlByPeriod();
+  await ctx.reply('Обновляю поля Control');
+  await updateReportControlDaily();
+  await ctx.reply('Сортирую по дате');
+  await new ControlSheetService().sortSheetByDate(false, 3);
+  await ctx.reply('Все готово!');
 };
 
 export const onChangeDatePeriod = async (ctx: Context) => {

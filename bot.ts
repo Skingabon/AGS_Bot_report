@@ -18,14 +18,19 @@ import {
   reportLeadYesterday,
   onChangeDatePeriod,
   sortTableByDate,
+  createAndUpdateControl,
 } from './modules/generalFn';
 import { changeMonth } from './util/calendar';
-import {
-  getLastRowGoogleSheet,
-  updateFieldsGooglePack,
-} from './services/apiGoogleTable';
-import { getLeadsToday } from './services/apiAmo';
 import { formatDateMMDDYYYYByDate } from './util/helper';
+import {
+  ControlSheetService,
+  TimeSheetService,
+} from './services/apiGoogleTable';
+import { AmoAPI } from './services/apiAmo';
+import {
+  createReportControlByPeriod,
+  updateReportControlDaily,
+} from './modules/controlReport';
 
 const bot = new Bot(process.env.BOT_API_KEY || '');
 
@@ -53,9 +58,6 @@ bot.callbackQuery('report-time-last-day', protectedReportTimeLastDay);
 bot.callbackQuery('report-time-period', protectedReportTimePeriod);
 bot.callbackQuery('send-google-link', protectedSendGoogleLink);
 bot.callbackQuery('report-marketing-period', protectedReportMarketing);
-bot.callbackQuery('test', async () => {
-  await updateIncomingCall();
-});
 
 bot.callbackQuery('report-lead-yesterday', reportLeadYesterday);
 bot.callbackQuery('report-lead-today', reportLeadToday);
@@ -63,6 +65,9 @@ bot.callbackQuery('report-lead-period', reportLeadPeriod);
 
 bot.callbackQuery('menu', fnStartingCommand);
 bot.callbackQuery('access-create-report', accessCreateReport);
+
+// Control
+bot.callbackQuery('create-report-control', createAndUpdateControl);
 
 // Календарь
 bot.callbackQuery(/cal_date_(.+)/, onChangeDatePeriod);
@@ -77,7 +82,8 @@ cron.schedule('40 23 * * *', async () => {
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
 
-  const lastRowBeforeFill = await getLastRowGoogleSheet();
+  const lastRowBeforeFill =
+    await new TimeSheetService().getLastRowGoogleSheet();
 
   if (!fs.existsSync(logDir)) {
     fs.mkdirSync(logDir, { recursive: true });
@@ -109,9 +115,12 @@ cron.schedule('40 23 * * *', async () => {
     const startTimestamp = Math.floor(startOfDay.getTime() / 1000);
     const endTimestamp = Math.floor(endOfDay.getTime() / 1000);
 
-    const allLeadByPeriod = await getLeadsToday(startTimestamp, endTimestamp);
+    const allLeadByPeriod = await new AmoAPI().getLeadsToday(
+      startTimestamp,
+      endTimestamp,
+    );
 
-    const lastRow = await getLastRowGoogleSheet();
+    const lastRow = await new TimeSheetService().getLastRowGoogleSheet();
     const sheetUpdates: {
       range: string;
       values: (string | number)[][];
@@ -126,8 +135,16 @@ cron.schedule('40 23 * * *', async () => {
       values: [[allLeadByPeriod.length]],
     });
 
-    await updateFieldsGooglePack(sheetUpdates);
+    await new TimeSheetService().updateFieldsGooglePack(sheetUpdates);
     fs.appendFileSync(logFile, `${new Date().toISOString()} Конец отчета \n`);
+  }
+
+  try {
+    await createReportControlByPeriod();
+    await updateReportControlDaily();
+    await new ControlSheetService().sortSheetByDate(false, 3);
+  } catch (err) {
+    if (err instanceof Error) console.log(err.message);
   }
 });
 

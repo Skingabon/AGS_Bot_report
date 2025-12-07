@@ -1,16 +1,9 @@
 import { Context } from 'grammy';
-import { domain, getAllPipelines, getLeadsToday } from '../services/apiAmo';
-import {
-  createGoogleFields,
-  getGoogleSheetData,
-  getRangeValues,
-} from '../services/apiGoogleTable';
-import {
-  convertDateFormat,
-  formatDateByPeriod,
-  getPeriodTimestamps,
-} from '../util/helper';
-import { getParamsLead } from './updateFields';
+import { convertDateFormat, getPeriodTimestamps } from '../util/helper';
+import { TimeSheetService } from '../services/apiGoogleTable';
+import { AmoAPI } from '../services/apiAmo';
+import { DOMAIN } from './contants';
+import { getLeadsTodayOrByPeriod, getParamsLead } from './utils';
 
 export const showReportLeadByPeriod = async (
   ctx: Context,
@@ -27,7 +20,10 @@ export const showReportLeadByPeriod = async (
     }
     const [startTimestamp, endTimestamp] = timeDate;
 
-    const response = await getLeadsToday(startTimestamp, endTimestamp);
+    const response = await new AmoAPI().getLeadsToday(
+      startTimestamp,
+      endTimestamp,
+    );
     const totalLeads: number = response.length;
     let countSeries = 0;
     let countIng = 0;
@@ -108,8 +104,12 @@ export const getReportMarketing = async (
     const [startInputDate, endInputDate] = timeDate;
 
     // Получаем ВСЕ данные одним запросом - это ключевое!
-    const rowLength = (await getGoogleSheetData('A')).flat().length;
-    const allData = await getRangeValues(`A2:AK${rowLength + 1}`);
+    const rowLength = (
+      await new TimeSheetService().getGoogleSheetData('A')
+    ).flat().length;
+    const allData = await new TimeSheetService().getRangeValues(
+      `A2:AK${rowLength + 1}`,
+    );
 
     const result: IResultLeadMarketing = {
       totalLeads: 0,
@@ -180,49 +180,10 @@ export const createReportTimeByPeriod = async (
   endDate?: string,
 ) => {
   try {
-    const pipelinesResponse = await getAllPipelines();
-    const pipelines = pipelinesResponse;
-    const pipelinesMap = pipelines.reduce(
-      (
-        acc: { [key: number]: string },
-        pipeline: { id: number; name: string },
-      ) => {
-        acc[pipeline.id] = pipeline.name;
-        return acc;
-      },
-      {},
+    const { leads, pipelinesMap } = await getLeadsTodayOrByPeriod(
+      startDate,
+      endDate,
     );
-    let startTimestamp;
-    let endTimestamp;
-    // Пример временных меток (начало и конец дня)
-    if (!startDate || !endDate) {
-      const today = new Date();
-
-      const startOfDay = new Date(today);
-      const endOfDay = new Date(today);
-
-      startOfDay.setHours(0, 0, 0, 0);
-      endOfDay.setHours(23, 59, 59, 999);
-
-      // Конвертируем в Unix timestamp (секунды)
-      startTimestamp = Math.floor(startOfDay.getTime() / 1000); //TODO Для прода
-      endTimestamp = Math.floor(endOfDay.getTime() / 1000);
-    } else {
-      const startDateFormated = new Date(formatDateByPeriod(startDate));
-      const endDateFormated = new Date(formatDateByPeriod(endDate));
-      endDateFormated.setHours(23, 59, 59, 999);
-
-      startTimestamp = Math.floor(startDateFormated.getTime() / 1000);
-      endTimestamp = Math.floor(endDateFormated.getTime() / 1000);
-    }
-
-    const response = await getLeadsToday(startTimestamp, endTimestamp);
-
-    let leads = response;
-    if (!leads || leads.length === 0) {
-      throw new Error('No leads found for the given filter.');
-    }
-    leads = leads.sort((a, b) => a.created_at - b.created_at);
 
     // Преобразование данных для загрузки в Google Sheets
     const googleSheetsData = leads.map((lead) => {
@@ -252,7 +213,7 @@ export const createReportTimeByPeriod = async (
       return [
         lead.id, // 1 A ID
         lead.name, // 2 B
-        `https://${domain}.amocrm.ru/leads/detail/${lead.id}`, // 3 C Ссылка на лид
+        `https://${DOMAIN}.amocrm.ru/leads/detail/${lead.id}`, // 3 C Ссылка на лид
         newLeadSourse, // 4 D Источник сделки
         statusName, // 5 E Название статуса
         pipelineName, // 6 F Название воронки
@@ -292,7 +253,7 @@ export const createReportTimeByPeriod = async (
     const resource = {
       values: googleSheetsData,
     };
-    await createGoogleFields(resource);
+    await new TimeSheetService().createGoogleFields(resource);
   } catch (error) {
     if (error instanceof Error) {
       console.log('error' + error.message);

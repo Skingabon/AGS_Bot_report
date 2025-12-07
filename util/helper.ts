@@ -1,5 +1,6 @@
 import { CustomFields } from '../interfaces';
 
+// Полчить дату из timestamps
 export const getDate = (time: number): string[] => {
   const date = new Date(time * 1000);
 
@@ -270,4 +271,8 @@ export const startRangeWith = (flag: boolean, allRow: number) => {
   }
 
   return flag ? firstRow : startRangeWith;
+};
+
+export const formatTimeHHMMSS = (s: number) => {
+  return new Date(s * 1000).toISOString().substr(11, 8);
 };

@@ -39,6 +39,9 @@ export type noteType = {
     message_id: string;
     private: boolean;
     income: boolean;
+    text: string;
+    phone: string;
+    link: string;
     from: {
       email: string;
       name: string;
@@ -54,6 +57,8 @@ export type noteType = {
       status: string;
       time: number;
     };
+    duration: number;
+    call_status: number;
   };
   account_id: number;
   _links: {
@@ -72,7 +77,7 @@ export interface noteTypeCall {
   updated_at: number;
   responsible_user_id: number;
   group_id: number;
-  note_type: 'call_out';
+  note_type: 'call_out' | 'call_in';
   params: {
     uniq: string;
     duration: number;
@@ -100,4 +105,33 @@ export function isMessageNote(note: Note): note is noteType {
 // Проверка на noteTypeCall (звонок)
 export function isCallNote(note: Note): note is noteTypeCall {
   return note.note_type === 'call_out';
+}
+
+export interface Task {
+  id: number;
+  created_by: number;
+  updated_by: number;
+  created_at: number;
+  updated_at: number;
+  responsible_user_id: number;
+  group_id: number;
+  entity_id: number;
+  entity_type: 'leads' | 'contacts' | 'companies' | 'customers';
+  duration: number;
+  is_completed: boolean;
+  task_type_id: number;
+  text: string;
+  result: Array<{
+    // Уточните структуру, если известно
+    id?: number;
+    text?: string;
+    // другие поля
+  }>;
+  complete_till: number;
+  account_id: number;
+  _links: {
+    self: {
+      href: string;
+    };
+  };
 }
