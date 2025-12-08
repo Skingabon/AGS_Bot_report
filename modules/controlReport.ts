@@ -1,28 +1,35 @@
-import { formatDate, formatTimeHHMMSS, getDate } from '../util/helper';
+import {
+  formatDate,
+  formatTimeHHMMSS,
+  getDate,
+  getFieldValue,
+} from '../util/helper';
 import { ControlSheetService } from '../services/apiGoogleTable';
 import { getLeadsTodayOrByPeriod } from './utils';
 import { DOMAIN } from './contants';
 import {
-  communicationType,
   incomingActionDateFromContact,
   incomingCallDate,
 } from './updateFields';
 import { AmoAPI } from '../services/apiAmo';
+import { Task } from '../interfaces';
 
 export const createReportControlByPeriod = async (
   startDate?: string,
   endDate?: string,
 ) => {
   try {
-    const { leads } = await getLeadsTodayOrByPeriod(startDate, endDate);
-
-    console.log(`📊 Создание ${leads.length} базовых строк сделок`);
-
-    const googleSheetsData: (string | number)[][] = [];
     const sheetService = new ControlSheetService();
+    const amo = new AmoAPI();
 
-    // Получаем все строки таблицы
-    const allRows = await sheetService.getRangeValues(`A2:R`);
+    // Инициализируем кэш пользователей
+    await amo.initUsersCache();
+
+    const { leads } = await getLeadsTodayOrByPeriod(startDate, endDate);
+    console.log(`📊 Найдено ${leads.length} сделок за период`);
+
+    // Получаем существующие ID сделок
+    const allRows = await sheetService.getRangeValues('A2:R');
     const existingLeadIds = new Set<number>();
     for (const row of allRows) {
       const leadId = Number(row[0]);
@@ -31,47 +38,113 @@ export const createReportControlByPeriod = async (
       }
     }
 
-    // const delay = (ms: number) =>
-    //   new Promise((resolve) => setTimeout(resolve, ms));
+    // Собираем данные для новых сделок
+    const googleSheetsData: (string | number)[][] = [];
 
-    // ТОЛЬКО БАЗОВЫЕ СТРОКИ СДЕЛОК
-    for (let i = 0; i < leads.length; i++) {
-      const lead = leads[i];
+    // Обрабатываем сделки пакетами
+    await sheetService.processInBatches(
+      leads,
+      async (batch, batchIndex) => {
+        const batchPromises = batch.map(async (lead) => {
+          // Пропускаем существующие сделки
+          if (existingLeadIds.has(lead.id)) return null;
 
-      if (existingLeadIds.has(lead.id)) continue;
+          const fields = lead.custom_fields_values || [];
+          const omTakenBy = getFieldValue(fields, 'ОМ Взято в работу');
+          if (!omTakenBy) return null;
 
-      // if (i > 0) await delay(500); // Небольшая задержка
+          // Получаем данные пользователя из кэша
+          const user = await amo.getUser(lead.responsible_user_id);
+          const createdAtFormatted = formatDate(lead.created_at);
+          const [year, month, day] = getDate(lead.created_at);
 
-      const createdAtFormatted = formatDate(lead.created_at);
-      const [year, month, day] = getDate(lead.created_at);
+          return [
+            lead.id, // A
+            lead.name, // B
+            `https://${DOMAIN}.amocrm.ru/leads/detail/${lead.id}`, // C
+            createdAtFormatted, // D
+            user ? user.name : '', // E - Ответственный
+            '', // F
+            '', // G
+            '', // H
+            '', // I
+            '', // J
+            '', // K
+            '', // L
+            '', // M
+            '', // N
+            day, // O
+            month, // P
+            year, // Q
+            '', // R
+          ];
+        });
 
-      // БАЗОВАЯ СТРОКА СДЕЛКИ (без действий)
-      googleSheetsData.push([
-        lead.id, // A
-        lead.name, // B
-        `https://${DOMAIN}.amocrm.ru/leads/detail/${lead.id}`, // C
-        createdAtFormatted, // D
-        '-', // E - место для отметки
-        '', // F - пусто (заполнится при update)
-        '', // G - пусто
-        '', // H - пусто
-        '', // I - пусто
-        '', // J - пусто
-        '', // K - пусто
-        '', // L - пусто
-        '', // M - пусто
-        '', // N - пусто
-        day, // O - день
-        month, // P - месяц
-        year, // Q - год
-        '', // R - пусто
-      ]);
-    }
+        const batchResults = await Promise.all(batchPromises);
+        const validResults = batchResults.filter((row) => row !== null) as (
+          | string
+          | number
+        )[][];
 
-    // Записываем в таблицу
+        if (validResults.length > 0) {
+          googleSheetsData.push(...validResults);
+          console.log(
+            `✅ Пакет ${batchIndex + 1}: добавлено ${validResults.length} строк`,
+          );
+        }
+      },
+      20, // batchSize
+      1000, // delayBetweenBatches
+    );
+
+    // Записываем все новые строки пакетами
     if (googleSheetsData.length > 0) {
-      await sheetService.createGoogleFields({ values: googleSheetsData });
+      console.log(
+        `📦 Итоговый пакет для записи: ${googleSheetsData.length} строк`,
+      );
+
+      // Разбиваем на пакеты по 500 строк для надежности
+      const MAX_ROWS_PER_BATCH = 500;
+
+      for (let i = 0; i < googleSheetsData.length; i += MAX_ROWS_PER_BATCH) {
+        const batch = googleSheetsData.slice(i, i + MAX_ROWS_PER_BATCH);
+        const batchNumber = Math.floor(i / MAX_ROWS_PER_BATCH) + 1;
+        const totalBatches = Math.ceil(
+          googleSheetsData.length / MAX_ROWS_PER_BATCH,
+        );
+
+        console.log(
+          `💾 Запись пакета ${batchNumber}/${totalBatches} (${batch.length} строк)`,
+        );
+
+        try {
+          await sheetService.createGoogleFieldsBatch({ values: batch });
+        } catch (error) {
+          console.error(`❌ Ошибка записи пакета ${batchNumber}:`, error);
+          // Пробуем записать меньшими пакетами
+          const SMALL_BATCH = 100;
+          for (let j = 0; j < batch.length; j += SMALL_BATCH) {
+            const smallBatch = batch.slice(j, j + SMALL_BATCH);
+            try {
+              await sheetService.createGoogleFieldsBatch({
+                values: smallBatch,
+              });
+              await new Promise((resolve) => setTimeout(resolve, 500));
+            } catch (smallError) {
+              console.error('❌ Ошибка записи малого пакета:', smallError);
+            }
+          }
+        }
+
+        // Задержка между пакетами записи
+        if (i + MAX_ROWS_PER_BATCH < googleSheetsData.length) {
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+        }
+      }
+
       console.log(`✅ Создано ${googleSheetsData.length} базовых строк сделок`);
+    } else {
+      console.log('⏭️ Нет новых сделок для создания');
     }
   } catch (error) {
     console.error('❌ Ошибка создания:', error);
@@ -87,13 +160,15 @@ export const updateReportControlDaily = async (): Promise<void> => {
     const sheetService = new ControlSheetService();
     const amo = new AmoAPI();
 
+    // Инициализируем кэш пользователей
+    await amo.initUsersCache();
+
     // Получаем все строки таблицы
-    const allRows = await sheetService.getRangeValues(`A2:R`);
+    const allRows = await sheetService.getRangeValues('A2:R');
     console.log(`📊 Найдено ${allRows.length} строк в таблице`);
 
     // Собираем ВСЕ существующие действия для сравнения
     const existingActions = new Set<string>();
-
     allRows.forEach((row) => {
       const actionKey = createActionKey(row);
       if (actionKey) {
@@ -101,49 +176,132 @@ export const updateReportControlDaily = async (): Promise<void> => {
       }
     });
 
-    // Для обновления базовых строк
-    const updatePromises: Promise<any>[] = [];
+    // Массивы для пакетной обработки
+    const updates: Array<{ range: string; values: any[][] }> = [];
+    const newRows: (string | number)[][] = [];
 
-    // Идем снизу вверх
-    for (let i = allRows.length - 1; i >= 0; i--) {
+    // ВАЖНО: Убираем Promise.all и обрабатываем последовательно
+    // с задержками между запросами к amoCRM
+
+    // Функция для задержки
+    const delay = (ms: number) =>
+      new Promise((resolve) => setTimeout(resolve, ms));
+
+    // Обрабатываем строки по одной, но с задержками
+    for (let i = 0; i < allRows.length; i++) {
       const row = allRows[i];
       const currentRowNumber = i + 2;
-
       const leadId = Number(row[0]);
-      if (!leadId || isNaN(leadId)) continue;
 
-      console.log(`🔄 Проверка сделки ${leadId} (строка ${currentRowNumber})`);
+      if (!leadId || isNaN(leadId)) {
+        console.log(`⏭️ Строка ${currentRowNumber}: пропуск, нет leadId`);
+        continue;
+      }
+
+      console.log(
+        `\n🔄 [${i + 1}/${allRows.length}] Обработка сделки ${leadId}`,
+      );
 
       try {
-        const leadCreatedAt = row[3];
-        const createdAtTimestamp = Math.floor(
-          new Date(leadCreatedAt).getTime() / 1000,
-        );
+        // Задержка между запросами к amoCRM (минимум 100мс)
+        if (i > 0) {
+          await delay(150); // Задержка 150мс между запросами
+        }
 
-        // Получаем данные сделки
-        const fromContact = await incomingActionDateFromContact(
-          leadId,
-          createdAtTimestamp,
-        );
-        const fromNotes = await incomingCallDate(leadId);
-        const tasks = await amo.getTasks(leadId);
+        // Получаем timestamp
+        let createdAtTimestamp: number;
+        try {
+          const leadCreatedAt = row[3];
+          createdAtTimestamp = Math.floor(
+            new Date(leadCreatedAt).getTime() / 1000,
+          );
+        } catch {
+          createdAtTimestamp = Math.floor(Date.now() / 1000);
+        }
+
+        // ПОСЛЕДОВАТЕЛЬНО получаем данные сделки (без Promise.all)
+        let fromContact = null;
+        let fromNotes = null;
+        let tasks: Task[] = [];
+
+        try {
+          // 1. Получаем fromContact
+          console.log(`   📞 Получение контактов...`);
+          fromContact = await incomingActionDateFromContact(
+            leadId,
+            createdAtTimestamp,
+          );
+
+          // Задержка между запросами к amoCRM
+          await delay(100);
+
+          // 2. Получаем fromNotes
+          console.log(`   📝 Получение примечаний...`);
+          fromNotes = await incomingCallDate(leadId);
+
+          // Задержка между запросами к amoCRM
+          await delay(100);
+
+          // 3. Получаем задачи
+          console.log(`   ✅ Получение задач...`);
+          tasks = await amo.getTasks(leadId);
+        } catch (error) {
+          console.error(
+            `   ⚠️ Ошибка получения данных для сделки ${leadId}:`,
+            error,
+          );
+          continue; // Пропускаем эту сделку при ошибке
+        }
 
         const communications = [
           ...(fromContact?.communications || []),
           ...(fromNotes?.communications || []),
         ];
-        const validTasks = tasks.filter((t) => t.duration);
+        const validTasks = tasks.filter((t) => t.text && t.duration);
 
         if (!validTasks.length && !communications.length) {
-          console.log(`⏭️ У сделки ${leadId} нет действий`);
+          console.log(`   ⏭️ Нет действий для сделки ${leadId}`);
           continue;
         }
 
-        // Подготавливаем данные для вставки (ТОЛЬКО НОВЫЕ)
-        const newRowsToInsert: (string | number)[][] = [];
+        console.log(
+          `   📊 Найдено: ${communications.length} комм., ${validTasks.length} задач`,
+        );
 
-        // 1. Проверяем и добавляем новые коммуникации
+        // Новые действия для этой сделки
+        const localNewRows: (string | number)[][] = [];
+        let shouldUpdateBaseRow = false;
+        let updateRowData: (string | number)[] = [];
+        const isBaseRowEmpty = !row[5] && !row[6] && !row[7]; // F, G, H пустые
+
+        // Обрабатываем коммуникации
         communications.forEach((touch) => {
+          if (touch.source === 'Звонок') {
+            // Проверяем, есть ли ссылка
+            if (!touch.linkCall || touch.linkCall === '-') {
+              console.log(
+                `   ⚠️ Пропуск звонка без ссылки для сделки ${leadId}`,
+              );
+              return;
+            }
+
+            // Дополнительно: проверяем, не является ли это дубликатом email/письма
+            // Если у нас уже есть письмо с таким же текстом и временем
+            const sameTextAction = communications.find(
+              (other) =>
+                other !== touch &&
+                other.time === touch.time &&
+                other.source !== 'Звонок',
+            );
+
+            if (sameTextAction) {
+              console.log(
+                `   ⚠️ Пропуск дубликата звонка (уже есть ${sameTextAction.source}) для сделки ${leadId}`,
+              );
+              return;
+            }
+          }
+
           const [y, mon, d, h, m, s] = getDate(touch.time);
 
           const rowData = [
@@ -151,7 +309,7 @@ export const updateReportControlDaily = async (): Promise<void> => {
             row[1] || '', // B
             row[2] || '', // C
             row[3] || '', // D
-            '-', // E
+            row[4] || '', // E
             touch.core || '', // F
             touch.source || '', // G
             touch.text || '', // H
@@ -169,15 +327,20 @@ export const updateReportControlDaily = async (): Promise<void> => {
             touch.linkCall || '', // R
           ];
 
-          // Проверяем, есть ли уже такое действие в таблице
           const actionKey = createActionKey(rowData);
           if (actionKey && !existingActions.has(actionKey)) {
-            newRowsToInsert.push(rowData);
+            localNewRows.push(rowData);
             existingActions.add(actionKey);
+
+            // Если это первое действие и базовая строка пустая
+            if (isBaseRowEmpty && updateRowData.length === 0) {
+              shouldUpdateBaseRow = true;
+              updateRowData = [...rowData];
+            }
           }
         });
 
-        // 2. Проверяем и добавляем новые задачи
+        // Обрабатываем задачи
         validTasks.forEach((task) => {
           const [y, mon, d, h, m, s] = getDate(task.created_at);
 
@@ -186,12 +349,12 @@ export const updateReportControlDaily = async (): Promise<void> => {
             row[1] || '', // B
             row[2] || '', // C
             row[3] || '', // D
-            '-', // E
+            row[4] || '', // E
             'task', // F
             'Задачи', // G
             task.text || '', // H
             'Встреча', // I
-            '', // J
+            task.is_completed ? 'Да' : 'Нет', // J
             '', // K
             `${y}.${mon}.${d}`, // L
             `${h}:${m}:${s}`, // M
@@ -204,160 +367,139 @@ export const updateReportControlDaily = async (): Promise<void> => {
 
           const actionKey = createActionKey(rowData);
           if (actionKey && !existingActions.has(actionKey)) {
-            newRowsToInsert.push(rowData);
+            localNewRows.push(rowData);
             existingActions.add(actionKey);
+
+            // Если это первое действие и базовая строка пустая
+            if (isBaseRowEmpty && updateRowData.length === 0) {
+              shouldUpdateBaseRow = true;
+              updateRowData = [...rowData];
+            }
           }
         });
 
-        // 3. ОБНОВЛЯЕМ БАЗОВУЮ СТРОКУ, если она пустая
-        const isBaseRowEmpty = !row[5] && !row[6] && !row[7]; // F, G, H пустые
+        // Добавляем обновление базовой строки
+        if (shouldUpdateBaseRow && updateRowData.length > 0) {
+          updates.push({
+            range: `A${currentRowNumber}:R${currentRowNumber}`,
+            values: [updateRowData],
+          });
 
-        if (
-          isBaseRowEmpty &&
-          (communications.length > 0 || validTasks.length > 0)
-        ) {
-          // Берем первое действие для обновления базовой строки
-          let firstAction: any = null;
+          console.log(`   ✏️ Будет обновлена строка ${currentRowNumber}`);
 
-          if (communications.length > 0) {
-            firstAction = communications[0];
-          } else if (validTasks.length > 0) {
-            firstAction = validTasks[0];
-          }
-
-          if (firstAction) {
-            let updateRowData: (string | number)[] = [];
-
-            // Type guard для коммуникаций
-            const isCommunication = (
-              action: any,
-            ): action is communicationType => {
-              return 'source' in action;
-            };
-
-            // Type guard для задач (предполагаем, что Task имеет поле duration)
-            const isTask = (
-              action: any,
-            ): action is {
-              created_at: number;
-              text?: string;
-              duration: number;
-            } => {
-              return 'duration' in action && 'created_at' in action;
-            };
-
-            if (isCommunication(firstAction)) {
-              // Это коммуникация
-              const touch = firstAction;
-              const [y, mon, d, h, m, s] = getDate(touch.time);
-
-              updateRowData = [
-                leadId, // A
-                row[1] || '', // B
-                row[2] || '', // C
-                row[3] || '', // D
-                '-', // E
-                touch.core || '', // F
-                touch.source || '', // G
-                touch.text || '', // H
-                `${touch.source} ${touch.source !== 'Примечание' ? (touch.income ? 'вход' : 'исх') : ''}`, // I
-                touch.source === 'Звонок'
-                  ? touch.isDoCall
-                    ? 'Да'
-                    : 'Нет'
-                  : '', // J
-                touch.source === 'Звонок' && touch.isDoCall
-                  ? formatTimeHHMMSS(touch.durationCall || 0)
-                  : '', // K
-                `${y}.${mon}.${d}`, // L
-                `${h}:${m}:${s}`, // M
-                '-', // N
-                row[14] || '', // O
-                row[15] || '', // P
-                row[16] || '', // Q
-                touch.linkCall || '', // R
-              ];
-            } else if (isTask(firstAction)) {
-              // Это задача
-              const task = firstAction;
-              const [y, mon, d, h, m, s] = getDate(task.created_at);
-
-              updateRowData = [
-                leadId, // A
-                row[1] || '', // B
-                row[2] || '', // C
-                row[3] || '', // D
-                '-', // E
-                'task', // F
-                'Задачи', // G
-                task.text || '', // H
-                'Встреча', // I
-                '', // J
-                '', // K
-                `${y}.${mon}.${d}`, // L
-                `${h}:${m}:${s}`, // M
-                formatTimeHHMMSS(task.duration), // N
-                row[14] || '', // O
-                row[15] || '', // P
-                row[16] || '', // Q
-                '-', // R
-              ];
-            } else {
-              // Если тип неизвестен, пропускаем обновление
-              console.log(`⚠️ Неизвестный тип действия для сделки ${leadId}`);
-            }
-
-            if (updateRowData.length) {
-              // Обновляем базовую строку
-              updatePromises.push(
-                sheetService.updateFieldsGooglePack([
-                  {
-                    range: `A${currentRowNumber}:R${currentRowNumber}`,
-                    values: [updateRowData],
-                  },
-                ]),
-              );
-
-              console.log(
-                `✏️ Будет обновлена базовая строка ${currentRowNumber} для сделки ${leadId}`,
-              );
-
-              // Убираем это действие из newRowsToInsert, если оно там есть
-              const actionKey = createActionKey(updateRowData);
-              const actionIndex = newRowsToInsert.findIndex(
-                (r) => createActionKey(r) === actionKey,
-              );
-              if (actionIndex !== -1) {
-                newRowsToInsert.splice(actionIndex, 1);
-              }
-            }
+          // Убираем это действие из localNewRows если оно там есть
+          const actionKey = createActionKey(updateRowData);
+          const actionIndex = localNewRows.findIndex(
+            (r) => createActionKey(r) === actionKey,
+          );
+          if (actionIndex !== -1) {
+            localNewRows.splice(actionIndex, 1);
           }
         }
 
-        // 4. Добавляем ОСТАЛЬНЫЕ НОВЫЕ действия в конец таблицы
-        if (newRowsToInsert.length > 0) {
-          updatePromises.push(
-            sheetService.createGoogleFields({ values: newRowsToInsert }),
+        // Добавляем оставшиеся новые строки
+        if (localNewRows.length > 0) {
+          newRows.push(...localNewRows);
+          console.log(`   ➕ Добавлено ${localNewRows.length} новых действий`);
+        }
+
+        // Прогресс каждые 50 сделок
+        if ((i + 1) % 50 === 0) {
+          console.log(
+            `\n📊 Прогресс: ${i + 1}/${allRows.length} сделок обработано`,
           );
           console.log(
-            `➕ Добавлено ${newRowsToInsert.length} новых действий для сделки ${leadId}`,
+            `   Собрано: ${updates.length} обновлений, ${newRows.length} новых строк`,
           );
-        } else {
-          console.log(`⏭️ Для сделки ${leadId} нет новых действий`);
+
+          // Можно сделать небольшую паузу после каждых 50 сделок
+          await delay(1000);
         }
       } catch (error) {
-        if (error instanceof Error)
-          console.error(`❌ Ошибка обработки сделки ${leadId}:`, error.message);
+        console.error(`❌ Ошибка обработки сделки ${leadId}:`, error);
+
+        // Пауза после ошибки
+        await delay(500);
       }
     }
 
-    // Выполняем все обновления
-    if (updatePromises.length > 0) {
-      await Promise.all(updatePromises);
-      console.log(`✅ Все обновления выполнены`);
+    // Выполняем пакетные операции
+    console.log(
+      `\n📊 Итоги: ${updates.length} обновлений, ${newRows.length} новых строк`,
+    );
+
+    // 1. Пакетное обновление существующих строк
+    if (updates.length > 0) {
+      console.log(`\n🔄 Выполнение ${updates.length} обновлений...`);
+
+      const UPDATE_BATCH_SIZE = 30;
+
+      for (let i = 0; i < updates.length; i += UPDATE_BATCH_SIZE) {
+        const batch = updates.slice(i, i + UPDATE_BATCH_SIZE);
+        const batchNumber = Math.floor(i / UPDATE_BATCH_SIZE) + 1;
+
+        console.log(
+          `   💾 Обновление пакета ${batchNumber} (${batch.length} строк)`,
+        );
+
+        try {
+          await sheetService.batchUpdateCells(batch);
+        } catch (error) {
+          console.error(
+            `   ❌ Ошибка обновления пакета ${batchNumber}:`,
+            error,
+          );
+        }
+
+        // Задержка между пакетами обновлений
+        if (i + UPDATE_BATCH_SIZE < updates.length) {
+          await delay(2000);
+        }
+      }
     }
 
-    console.log(`✅ Обновление полей завершено`);
+    // 2. Пакетное добавление новых строк
+    if (newRows.length > 0) {
+      console.log(`\n➕ Добавление ${newRows.length} новых строк...`);
+
+      const CREATE_BATCH_SIZE = 100;
+
+      for (let i = 0; i < newRows.length; i += CREATE_BATCH_SIZE) {
+        const batch = newRows.slice(i, i + CREATE_BATCH_SIZE);
+        const batchNumber = Math.floor(i / CREATE_BATCH_SIZE) + 1;
+
+        console.log(
+          `   💾 Запись пакета ${batchNumber} (${batch.length} строк)`,
+        );
+
+        try {
+          await sheetService.createGoogleFieldsBatch({ values: batch });
+        } catch (error) {
+          console.error(`   ❌ Ошибка записи пакета ${batchNumber}:`, error);
+
+          // Пробуем записать меньшими пакетами
+          const SMALL_BATCH = 20;
+          for (let j = 0; j < batch.length; j += SMALL_BATCH) {
+            const smallBatch = batch.slice(j, j + SMALL_BATCH);
+            try {
+              await sheetService.createGoogleFieldsBatch({
+                values: smallBatch,
+              });
+              await delay(500);
+            } catch (smallError) {
+              console.error('   ❌ Ошибка записи малого пакета:', smallError);
+            }
+          }
+        }
+
+        // Задержка между пакетами
+        if (i + CREATE_BATCH_SIZE < newRows.length) {
+          await delay(2000);
+        }
+      }
+    }
+
+    console.log(`\n✅ Обновление полей завершено`);
   } catch (error) {
     console.error('❌ Глобальная ошибка при обновлении полей:', error);
     throw error;

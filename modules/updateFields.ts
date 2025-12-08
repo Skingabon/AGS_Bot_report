@@ -7,12 +7,8 @@ import {
   getFieldValue,
   parseCustomDate,
   safeParseDate,
-  startRangeWith,
 } from '../util/helper';
-import {
-  ControlSheetService,
-  TimeSheetService,
-} from '../services/apiGoogleTable';
+import { TimeSheetService } from '../services/apiGoogleTable';
 import { AmoAPI } from '../services/apiAmo';
 import { getParamsLead } from './utils';
 
@@ -202,28 +198,16 @@ function isInvalidDateIncoming({
   return createAtLead > createAtIncoming;
 }
 
-// Получить все действия с сделкой
-export const getAllAction = async () => {
-  try {
-    const ids = (
-      await new ControlSheetService().getGoogleSheetData('A')
-    ).flat();
-    console.log(ids);
-    //
-    // const fromContact = await incomingActionDateFromContact(ids[0][0], ids[0][0]);
-    // const fromNotes = await incomingCallDate(28936593);
-  } catch (err) {
-    if (err instanceof Error) console.log(err.message);
-  }
-};
-
 //Заполняю звонки за прошлые периоды если их небыло раньше
 export const updateIncomingCall = async (isAllField = false) => {
   try {
     // Получаем данные из таблицы
     const rowLength =
       (await new TimeSheetService().getGoogleSheetData('A')).flat().length + 1;
-    const startRange = startRangeWith(isAllField, rowLength);
+    const startRange = new TimeSheetService().startRangeWith(
+      isAllField,
+      rowLength,
+    );
     const allData = await new TimeSheetService().getRangeValues(
       `A${startRange}:AL${rowLength}`,
     );
@@ -436,7 +420,10 @@ export const updateAllFiled = async (isAllField = false) => {
   try {
     const rowLength =
       (await new TimeSheetService().getGoogleSheetData('A')).flat().length + 1;
-    const startRange = startRangeWith(isAllField, rowLength);
+    const startRange = new TimeSheetService().startRangeWith(
+      isAllField,
+      rowLength,
+    );
     const allData = await new TimeSheetService().getRangeValues(
       `A${startRange}:AL${rowLength}`,
     );
@@ -464,8 +451,6 @@ export const updateAllFiled = async (isAllField = false) => {
     let processedCount = 0;
     let notFoundCount = 0;
     let errorCount = 0;
-    //TODO: нужно пропускать "Закрыто и не реализовано", но когда нет менеджеров
-    //const allData = await getRangeValues(`A2:AK${rowLength + 1}`);
     // Обрабатываем лиды пакетами
     for (let i = 0; i < allData.length; i += batchSize) {
       const batch = allData.slice(i, i + batchSize);

@@ -16,6 +16,7 @@ export interface Lead {
   omAssignedAt: number;
   omAssignedBy: string;
   custom_fields_values?: CustomFields[];
+  responsible_user_id: number;
 }
 
 export interface CustomFields {
@@ -130,6 +131,24 @@ export interface Task {
   complete_till: number;
   account_id: number;
   _links: {
+    self: {
+      href: string;
+    };
+  };
+}
+
+export interface IUser {
+  id: number;
+  name: string;
+  email?: string;
+  lang?: string;
+  rights?: {
+    is_admin: boolean;
+    is_free: boolean;
+    is_active: boolean;
+  };
+  group_id?: number;
+  _links?: {
     self: {
       href: string;
     };

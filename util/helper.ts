@@ -259,20 +259,6 @@ export const formatDateMMDDYYYYByDate = (date: Date) => {
   return `${day}.${month}.${year}`;
 };
 
-// Получение стартовой строки за квартал
-export const startRangeWith = (flag: boolean, allRow: number) => {
-  const firstRow = 2;
-  let needRow = 1700;
-  let startRangeWith = allRow - needRow;
-
-  // Если строк меньше 1700 (квартал), то начинай со второй строки
-  if (needRow > allRow) {
-    startRangeWith = firstRow;
-  }
-
-  return flag ? firstRow : startRangeWith;
-};
-
 export const formatTimeHHMMSS = (s: number) => {
   return new Date(s * 1000).toISOString().substr(11, 8);
 };

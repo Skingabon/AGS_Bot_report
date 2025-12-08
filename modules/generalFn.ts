@@ -25,7 +25,8 @@ const calendarReport = async (
   calendarType:
     | 'awaiting_start_date_marketing'
     | 'awaiting_start_date_report_time'
-    | 'awaiting_start',
+    | 'awaiting_start'
+    | 'awaiting_start_date_report_control',
 ) => {
   if (!ctx.from) return;
   const userId = ctx.from.id;
@@ -53,6 +54,12 @@ const calendarStates: Record<
     }
   | {
       type: 'awaiting_start_date_marketing' | 'awaiting_end_date_marketing';
+      startDate?: string;
+    }
+  | {
+      type:
+        | 'awaiting_start_date_report_control'
+        | 'awaiting_end_date_report_control';
       startDate?: string;
     }
   | null
@@ -93,6 +100,9 @@ export const protectedReportTimePeriod = async (ctx: Context) => {
 };
 export const protectedReportMarketing = async (ctx: Context) => {
   await calendarReport(ctx, 'awaiting_start_date_marketing');
+};
+export const protectedReportControl = async (ctx: Context) => {
+  await calendarReport(ctx, 'awaiting_start_date_report_control');
 };
 
 export const reportLeadYesterday = async (ctx: Context) => {
@@ -165,7 +175,7 @@ export const createAndUpdateControl = async (ctx: Context) => {
   await ctx.reply('Обновляю поля Control');
   await updateReportControlDaily();
   await ctx.reply('Сортирую по дате');
-  await new ControlSheetService().sortSheetByDate(false, 3);
+  await new ControlSheetService().sortSheetByDate();
   await ctx.reply('Все готово!');
 };
 
@@ -242,6 +252,42 @@ export const onChangeDatePeriod = async (ctx: Context) => {
     await updateAllFiled();
     await ctx.reply('Обрабатываю исходящие звонки');
     await updateIncomingCall();
+    await ctx.reply('Все готово!');
+    delete calendarStates[userId];
+  } else if (state.type === 'awaiting_start_date_report_control') {
+    state.startDate = selectedDate;
+    state.type = 'awaiting_end_date_report_control';
+
+    const { year, month } = TelegramCalendar.getCurrentMonth();
+
+    await ctx.editMessageText(
+      `✅ Начальная дата: <b>${selectedDate}</b>\n\n` +
+        'Теперь выберите <b>конечную дату</b>:',
+      {
+        parse_mode: 'HTML',
+        reply_markup: TelegramCalendar.generateMonth(year, month),
+      },
+    );
+  } else if (
+    state.type === 'awaiting_end_date_report_control' &&
+    state.startDate
+  ) {
+    const endDate = selectedDate;
+
+    await ctx.editMessageText(
+      `✅ Период выбран:\n` +
+        `📅 С: ${state.startDate}\n` +
+        `📅 По: ${endDate}\n\n` +
+        `⏳ Формирую отчет...`,
+    );
+
+    // Вызываем вашу функцию
+    await ctx.reply('Начинаю работать с таблицей Control');
+    await createReportControlByPeriod(state.startDate, endDate);
+    await ctx.reply('Обновляю поля Control');
+    await updateReportControlDaily();
+    await ctx.reply('Сортирую по дате');
+    await new ControlSheetService().sortSheetByDate();
     await ctx.reply('Все готово!');
     delete calendarStates[userId];
   } else if (state.type === 'awaiting_start_date_marketing') {

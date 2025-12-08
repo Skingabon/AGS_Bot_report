@@ -40,7 +40,9 @@ export const getBossMenu = () => {
     .row()
     .text('⚠️ Сортировка всей таблицы', 'sort-all')
     .row()
-    .text('Создать отчет Control', 'create-report-control')
+    .text('Создать отчет Control (день)', 'create-report-control')
+    .row()
+    .text('Создать отчет Control (период)', 'report-control-period')
     .row()
     .text('Вернуться в меню', 'menu')
     .row();

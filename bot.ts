@@ -19,6 +19,7 @@ import {
   onChangeDatePeriod,
   sortTableByDate,
   createAndUpdateControl,
+  protectedReportControl,
 } from './modules/generalFn';
 import { changeMonth } from './util/calendar';
 import { formatDateMMDDYYYYByDate } from './util/helper';
@@ -58,6 +59,7 @@ bot.callbackQuery('report-time-last-day', protectedReportTimeLastDay);
 bot.callbackQuery('report-time-period', protectedReportTimePeriod);
 bot.callbackQuery('send-google-link', protectedSendGoogleLink);
 bot.callbackQuery('report-marketing-period', protectedReportMarketing);
+bot.callbackQuery('report-control-period', protectedReportControl);
 
 bot.callbackQuery('report-lead-yesterday', reportLeadYesterday);
 bot.callbackQuery('report-lead-today', reportLeadToday);
@@ -142,7 +144,7 @@ cron.schedule('40 23 * * *', async () => {
   try {
     await createReportControlByPeriod();
     await updateReportControlDaily();
-    await new ControlSheetService().sortSheetByDate(false, 3);
+    await new ControlSheetService().sortSheetByDate();
   } catch (err) {
     if (err instanceof Error) console.log(err.message);
   }
