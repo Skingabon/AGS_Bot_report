@@ -15,10 +15,6 @@ import { AmoAPI } from '../services/apiAmo';
 import { Task } from '../interfaces';
 import { getStatusLead } from './statusList';
 
-export const TEST = async () => {
-  await updateAllFiled(true);
-};
-
 export const createReportControlByPeriod = async (
   startDate?: string,
   endDate?: string,

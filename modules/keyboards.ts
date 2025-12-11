@@ -14,9 +14,9 @@ export const getBaseMenu = (ctx: Context): InlineKeyboard => {
     .text('Отчет по сделкам за сегодня', 'report-lead-today')
     .row()
     .text('Отчет по сделкам за период', 'report-lead-period')
-    .row()
-    .text('test', 'test')
     .row();
+  // .text('test', 'test')
+  // .row();
 
   return menuKeyboard;
 };

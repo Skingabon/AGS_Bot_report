@@ -67,6 +67,10 @@ bot.callbackQuery('report-lead-period', reportLeadPeriod);
 
 bot.callbackQuery('menu', fnStartingCommand);
 bot.callbackQuery('access-create-report', accessCreateReport);
+bot.callbackQuery('test', async (ctx) => {
+  await ctx.reply('Начало');
+  await ctx.reply('Готово');
+});
 
 // Control
 bot.callbackQuery('create-report-control', createAndUpdateControl);
