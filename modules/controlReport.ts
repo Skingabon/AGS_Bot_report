@@ -13,6 +13,11 @@ import {
 } from './updateFields';
 import { AmoAPI } from '../services/apiAmo';
 import { Task } from '../interfaces';
+import { getStatusLead } from './statusList';
+
+export const TEST = async () => {
+  await updateAllFiled(true);
+};
 
 export const createReportControlByPeriod = async (
   startDate?: string,
@@ -25,7 +30,10 @@ export const createReportControlByPeriod = async (
     // Инициализируем кэш пользователей
     await amo.initUsersCache();
 
-    const { leads } = await getLeadsTodayOrByPeriod(startDate, endDate);
+    const { leads, pipelinesMap } = await getLeadsTodayOrByPeriod(
+      startDate,
+      endDate,
+    );
     console.log(`📊 Найдено ${leads.length} сделок за период`);
 
     // Получаем существующие ID сделок
@@ -57,6 +65,11 @@ export const createReportControlByPeriod = async (
           const user = await amo.getUser(lead.responsible_user_id);
           const createdAtFormatted = formatDate(lead.created_at);
           const [year, month, day] = getDate(lead.created_at);
+          const leadPipeline = pipelinesMap[lead.pipeline_id];
+          const statusLead = getStatusLead({
+            statusId: lead.status_id,
+            pipelineId: lead.pipeline_id,
+          });
 
           return [
             lead.id, // A
@@ -77,6 +90,8 @@ export const createReportControlByPeriod = async (
             month, // P
             year, // Q
             '', // R
+            statusLead, // S Этап
+            leadPipeline, // T Воронка
           ];
         });
 
@@ -257,7 +272,7 @@ export const updateReportControlDaily = async (): Promise<void> => {
           ...(fromContact?.communications || []),
           ...(fromNotes?.communications || []),
         ];
-        const validTasks = tasks.filter((t) => t.text && t.duration);
+        const validTasks = tasks.filter((t) => t.result.text || t.text);
 
         if (!validTasks.length && !communications.length) {
           console.log(`   ⏭️ Нет действий для сделки ${leadId}`);
@@ -313,7 +328,7 @@ export const updateReportControlDaily = async (): Promise<void> => {
             touch.core || '', // F
             touch.source || '', // G
             touch.text || '', // H
-            `${touch.source} ${touch.source !== 'Примечание' ? (touch.income ? 'вход' : 'исх') : ''}`, // I
+            `${touch.source} ${touch.source === 'Письмо' || touch.source === 'Звонок' ? (touch.income ? 'вход' : 'исх') : ''}`, // I
             touch.source === 'Звонок' ? (touch.isDoCall ? 'Да' : 'Нет') : '', // J
             touch.source === 'Звонок' && touch.isDoCall
               ? formatTimeHHMMSS(touch.durationCall || 0)

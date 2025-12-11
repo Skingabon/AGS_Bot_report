@@ -122,12 +122,10 @@ export interface Task {
   is_completed: boolean;
   task_type_id: number;
   text: string;
-  result: Array<{
-    // Уточните структуру, если известно
+  result: {
     id?: number;
-    text?: string;
-    // другие поля
-  }>;
+    text: string;
+  };
   complete_till: number;
   account_id: number;
   _links: {

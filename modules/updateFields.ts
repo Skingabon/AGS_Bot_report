@@ -14,7 +14,7 @@ import { getParamsLead } from './utils';
 
 type requiredCommunicationType = {
   id: number;
-  source: 'Письмо' | 'Звонок' | 'Примечание';
+  source: 'Письмо' | 'Звонок' | 'Примечание' | 'Вложение';
   time: number;
   core: 'contact' | 'note' | 'task';
 };
@@ -132,6 +132,15 @@ export const incomingCallDate = async (
         communications.push({
           id: el.id,
           source: 'Примечание',
+          time: el.created_at,
+          text: el.params.text,
+          core: 'note',
+        });
+      }
+      if (el.note_type === 'attachment') {
+        communications.push({
+          id: el.id,
+          source: 'Вложение',
           time: el.created_at,
           text: el.params.text,
           core: 'note',
@@ -427,6 +436,9 @@ export const updateAllFiled = async (isAllField = false) => {
     const allData = await new TimeSheetService().getRangeValues(
       `A${startRange}:AL${rowLength}`,
     );
+    const amo = new AmoAPI();
+    // Инициализируем кэш пользователей
+    await amo.initUsersCache();
 
     // Подготавливаем данные для пакетного обновления
     const sheetUpdates: {
@@ -456,7 +468,7 @@ export const updateAllFiled = async (isAllField = false) => {
       const batch = allData.slice(i, i + batchSize);
 
       for (let j = 0; j < batch.length; j++) {
-        const row = batch[j]; // ← ИСПРАВЛЕНО: было allData[i], стало batch[j]
+        const row = batch[j];
         const globalIndex = i + j;
         const rowNumber = globalIndex + startRange;
         const idLeadFromTable = row[0] || ''; // A
@@ -555,8 +567,32 @@ export const updateAllFiled = async (isAllField = false) => {
             ],
           });
 
+          let techStatus = pipelineName;
+
+          if (reasonForRefusal) {
+            techStatus = 'Отказ';
+          }
+          if (
+            (pipelineName === 'Отдел инжиниринга' ||
+              pipelineName === 'Отдел серийного оборудования' ||
+              pipelineName === 'Квалификация') &&
+            (statusName === '7. Нецелевой лид' ||
+              statusName === '10. Закрыто и не реализовано' ||
+              statusName === '8. Закрыто и не реализовано')
+          ) {
+            techStatus = 'Отказ';
+          }
+          if (
+            statusName !== '10. Закрыто и не реализовано' &&
+            statusName !== '8. Закрыто и не реализовано' &&
+            (pipelineName === 'Отдел инжиниринга' ||
+              pipelineName === 'Отдел серийного оборудования')
+          ) {
+            techStatus = 'Кв. Лид';
+          }
+
           sheetUpdates.push({
-            range: `W${rowNumber}:AB${rowNumber}`,
+            range: `W${rowNumber}:AC${rowNumber}`,
             values: [
               [
                 formattedUpdatedAt,
@@ -565,6 +601,7 @@ export const updateAllFiled = async (isAllField = false) => {
                 totalTimeLead,
                 nameIndustry,
                 nameProduct,
+                techStatus,
               ],
             ],
           });
@@ -573,6 +610,21 @@ export const updateAllFiled = async (isAllField = false) => {
           sheetUpdates.push({
             range: `AH${rowNumber}:AJ${rowNumber}`,
             values: [[day, month, year]],
+          });
+
+          let techManager = '';
+          if (!omRaspredByIng && !omAssignedBy && !omTakenBy) {
+            techManager = 'Не Квал';
+          } else {
+            const user = await amo.getUser(lead.responsible_user_id);
+            if (user) {
+              techManager = user.name;
+            }
+          }
+
+          sheetUpdates.push({
+            range: `AL${rowNumber}:AL${rowNumber}`,
+            values: [[techManager]],
           });
 
           processedCount++;

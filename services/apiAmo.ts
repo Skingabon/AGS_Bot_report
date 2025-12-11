@@ -245,6 +245,20 @@ export class AmoAPI {
     const data = await response.json();
     return data._embedded.pipelines;
   }
+  // Возвращает "id Воронки": 'Воронка'
+  async getPipelinesName() {
+    const pipelines = await new AmoAPI().getAllPipelines();
+    return pipelines.reduce(
+      (
+        acc: { [key: number]: string },
+        pipeline: { id: number; name: string },
+      ) => {
+        acc[pipeline.id] = pipeline.name;
+        return acc;
+      },
+      {},
+    );
+  }
 
   async getLeadsToday(
     startTimestamp: number,

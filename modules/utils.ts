@@ -8,13 +8,7 @@ import {
   parseDate,
 } from '../util/helper';
 import { Lead } from '../interfaces';
-import { statusMap } from './statusList';
-
-const getStatusLead = (lead: Lead): string => {
-  return (
-    statusMap[lead.status_id] || `Неизвестный статус (ID: ${lead.status_id})`
-  );
-};
+import { getStatusLead } from './statusList';
 
 export const getLeadsTodayOrByPeriod = async (
   startDate?: string,
@@ -83,7 +77,10 @@ export const getParamsLead = ({ lead, pipelinesMap }: getParamsLeadType) => {
 
   // Добавляем название статуса в зависимости от ID статуса
   //Заменить на switch case
-  const statusName = getStatusLead(lead);
+  const statusName = getStatusLead({
+    statusId: lead.status_id,
+    pipelineId: lead.pipeline_id,
+  });
 
   //новые поля
   const fields = lead.custom_fields_values || [];
