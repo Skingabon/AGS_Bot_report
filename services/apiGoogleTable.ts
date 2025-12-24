@@ -202,6 +202,7 @@ export class TimeSheetService extends GoogleSheetService {
 
 // Специализированный класс для листа Control
 export class ControlSheetService extends GoogleSheetService {
+  protected readonly maxColumnName: string = 'AE';
   constructor() {
     // TODO: countQuartetRow еще не работает для Control
     super('Control', 1500, 3);
@@ -232,7 +233,7 @@ export class ControlSheetService extends GoogleSheetService {
 
       await this.updateFieldsGooglePack([
         {
-          range: `A${startRow}:R${endRow}`,
+          range: `A${startRow}:${this.maxColumnName}${endRow}`,
           values: data.values,
         },
       ]);
@@ -275,7 +276,7 @@ export class ControlSheetService extends GoogleSheetService {
 
       await sheets.spreadsheets.values.append({
         spreadsheetId: this.SPREADSHEET_ID,
-        range: `${this.sheetName}!A:R`,
+        range: `${this.sheetName}!A:${this.maxColumnName}`,
         valueInputOption: 'USER_ENTERED',
         insertDataOption: 'INSERT_ROWS',
         requestBody: {
@@ -443,7 +444,7 @@ export class ControlSheetService extends GoogleSheetService {
                   sheetId: sheetId,
                   gridProperties: {
                     rowCount: newRowCount,
-                    columnCount: Math.max(currentColCount, 29), // A:AC
+                    columnCount: Math.max(currentColCount, 31), // A:AE
                   },
                 },
                 fields: 'gridProperties.rowCount,gridProperties.columnCount',

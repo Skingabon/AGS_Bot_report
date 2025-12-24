@@ -2,6 +2,7 @@ import { isMessageNote, Lead } from '../interfaces';
 import {
   formatDate,
   formatDiff,
+  formatDurationDDHHMM,
   formatSecondsToHHMM,
   getDate,
   getFieldValue,
@@ -17,6 +18,7 @@ type requiredCommunicationType = {
   source: 'Письмо' | 'Звонок' | 'Примечание' | 'Вложение';
   time: number;
   core: 'contact' | 'note' | 'task';
+  responsibleUserId: number;
 };
 
 type partialCommunicationType = {
@@ -57,6 +59,7 @@ export const incomingActionDateFromContact = async (
           text: el.params.subject,
           income: el.params.income,
           core: 'contact',
+          responsibleUserId: el.responsible_user_id,
         });
       }
       // if (isCallNote(el)) {
@@ -71,6 +74,7 @@ export const incomingActionDateFromContact = async (
         isDoCall: el.params.call_status === 4,
         core: 'contact',
         linkCall: el.params.link,
+        responsibleUserId: el.responsible_user_id,
       });
       // }
     });
@@ -115,6 +119,7 @@ export const incomingCallDate = async (
           isDoCall: el.params.call_status === 4,
           core: 'note',
           linkCall: el.params.link,
+          responsibleUserId: el.responsible_user_id,
         });
       }
       if (el.note_type === 'amomail_message') {
@@ -126,6 +131,7 @@ export const incomingCallDate = async (
           text: el.params.subject,
           income: el.params.income,
           core: 'note',
+          responsibleUserId: el.responsible_user_id,
         });
       }
       if (el.note_type === 'common') {
@@ -135,6 +141,7 @@ export const incomingCallDate = async (
           time: el.created_at,
           text: el.params.text,
           core: 'note',
+          responsibleUserId: el.responsible_user_id,
         });
       }
       if (el.note_type === 'attachment') {
@@ -144,6 +151,7 @@ export const incomingCallDate = async (
           time: el.created_at,
           text: el.params.text,
           core: 'note',
+          responsibleUserId: el.responsible_user_id,
         });
       }
     });
@@ -268,14 +276,6 @@ export const updateIncomingCall = async (isAllField = false) => {
           continue;
         }
 
-        // 2. Пропускаем если УЖЕ ЕСТЬ данные о первом касании (кроме определенных значений)
-        // const shouldProcessFirstTouch =
-        //   firstTouch === 'Старый лид' ||
-        //   firstTouch === 'Ошибка обработки' ||
-        //   firstTouch === 'Лид не найден' ||
-        //   firstTouch === 'Неверный ID' ||
-        //   firstTouch !== '-';
-
         if (firstTouch.includes('/')) {
           // Если уже есть нормальные данные - пропускаем
           // console.log(
@@ -363,14 +363,21 @@ export const updateIncomingCall = async (isAllField = false) => {
           );
           const dateOutput = `${year}.${month}.${day} ${hours}:${minutes}`;
           const incomingDate = safeParseDate(dateOutput);
+          let deltaTimeFirstWork = '';
 
           if (incomingDate) {
             if (omAssignedBy && assignedAtDate) {
               deltaTimeFirstResponse = formatDiff(
                 incomingDate.getTime() - assignedAtDate.getTime(),
               );
+              deltaTimeFirstWork = formatDurationDDHHMM(
+                incomingDate.getTime() - assignedAtDate.getTime(),
+              );
             } else if (!omAssignedBy && raspredIngAtDate) {
               deltaTimeFirstResponse = formatDiff(
+                incomingDate.getTime() - raspredIngAtDate.getTime(),
+              );
+              deltaTimeFirstWork = formatDurationDDHHMM(
                 incomingDate.getTime() - raspredIngAtDate.getTime(),
               );
             }
@@ -390,6 +397,12 @@ export const updateIncomingCall = async (isAllField = false) => {
           sheetUpdates.push({
             range: `AS${rowNumber}:AS${rowNumber}`,
             values: [[`${hours}:${minutes}:${seconds}`]],
+          });
+
+          // Дельта от на отвественного до первого касания
+          sheetUpdates.push({
+            range: `AM${rowNumber}:AM${rowNumber}`,
+            values: [[`${deltaTimeFirstWork}`]],
           });
 
           amoUpdatesPromises.push(

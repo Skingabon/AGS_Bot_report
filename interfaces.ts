@@ -152,3 +152,61 @@ export interface IUser {
     };
   };
 }
+
+// Базовые типы для всех событий
+interface BaseEvent {
+  id: string;
+  type: string;
+  entity_id: number;
+  entity_type: string;
+  created_by: number;
+  created_at: number;
+  account_id: number;
+  _links: {
+    self: {
+      href: string;
+    };
+  };
+  _embedded: {
+    entity: {
+      id: number;
+      _links: {
+        self: {
+          href: string;
+        };
+      };
+    };
+  };
+}
+
+// Тип для события изменения статуса лида
+export interface LeadStatusChangedEvent extends BaseEvent {
+  type: 'lead_status_changed';
+  value_after: Array<{
+    lead_status: {
+      id: number;
+      pipeline_id: number;
+    };
+  }>;
+  value_before: Array<{
+    lead_status: {
+      id: number;
+      pipeline_id: number;
+    };
+  }>;
+}
+
+// Тип для события изменения ответственного
+export interface LeadResponsibleChangedEvent extends BaseEvent {
+  type: 'entity_responsible_changed';
+  value_after: Array<{
+    responsible_user: {
+      id: number;
+    };
+  }>;
+  value_before: Array<{
+    responsible_user: {
+      id: number;
+    };
+  }>;
+}

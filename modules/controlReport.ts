@@ -12,8 +12,14 @@ import {
   incomingCallDate,
 } from './updateFields';
 import { AmoAPI } from '../services/apiAmo';
-import { Task } from '../interfaces';
+import {
+  LeadResponsibleChangedEvent,
+  LeadStatusChangedEvent,
+  Task,
+} from '../interfaces';
 import { getStatusLead } from './statusList';
+
+const maxColumnName = 'AE';
 
 export const createReportControlByPeriod = async (
   startDate?: string,
@@ -33,7 +39,7 @@ export const createReportControlByPeriod = async (
     console.log(`📊 Найдено ${leads.length} сделок за период`);
 
     // Получаем существующие ID сделок
-    const allRows = await sheetService.getRangeValues('A2:R');
+    const allRows = await sheetService.getRangeValues('A2:AE');
     const existingLeadIds = new Set<number>();
     for (const row of allRows) {
       const leadId = Number(row[0]);
@@ -58,7 +64,6 @@ export const createReportControlByPeriod = async (
           if (!omTakenBy) return null;
 
           // Получаем данные пользователя из кэша
-          const user = await amo.getUser(lead.responsible_user_id);
           const createdAtFormatted = formatDate(lead.created_at);
           const [year, month, day] = getDate(lead.created_at);
           const leadPipeline = pipelinesMap[lead.pipeline_id];
@@ -72,7 +77,7 @@ export const createReportControlByPeriod = async (
             lead.name, // B
             `https://${DOMAIN}.amocrm.ru/leads/detail/${lead.id}`, // C
             createdAtFormatted, // D
-            user ? user.name : '', // E - Ответственный
+            '', // E - Ответственный (оставляем пустым)
             '', // F
             '', // G
             '', // H
@@ -163,66 +168,153 @@ export const createReportControlByPeriod = async (
   }
 };
 
-// const FIRST_DATA_ROW = 2;
-// const LAST_COL = 'R';
-
 export const updateReportControlDaily = async (): Promise<void> => {
   try {
     const sheetService = new ControlSheetService();
     const amo = new AmoAPI();
 
+    const pipelinesResponse = await new AmoAPI().getAllPipelines();
+    const pipelines = pipelinesResponse;
+    const pipelinesMap = pipelines.reduce(
+      (
+        acc: { [key: number]: string },
+        pipeline: { id: number; name: string },
+      ) => {
+        acc[pipeline.id] = pipeline.name;
+        return acc;
+      },
+      {},
+    );
+
     // Инициализируем кэш пользователей
     await amo.initUsersCache();
 
     // Получаем все строки таблицы
-    const allRows = await sheetService.getRangeValues('A2:R');
+    const allRows = await sheetService.getRangeValues(`A2:${maxColumnName}`);
     console.log(`📊 Найдено ${allRows.length} строк в таблице`);
+
+    // ГРУППИРУЕМ строки по ID сделки
+    const leadsMap = new Map<
+      number,
+      Array<{
+        row: (string | number)[];
+        rowNumber: number;
+        isBaseRow?: boolean;
+      }>
+    >();
 
     // Собираем ВСЕ существующие действия для сравнения
     const existingActions = new Set<string>();
-    allRows.forEach((row) => {
+
+    // ЗАПОЛНЯЕМ leadsMap ДАННЫМИ ИЗ allRows
+    for (let i = 0; i < allRows.length; i++) {
+      const row = allRows[i];
+      const rowNumber = i + 2;
+      const leadId = Number(row[0]);
+
+      if (!leadId || isNaN(leadId)) {
+        continue;
+      }
+
+      // Добавляем строку в группу по ID сделки
+      if (!leadsMap.has(leadId)) {
+        leadsMap.set(leadId, []);
+      }
+
+      // Определяем, является ли строка базовой (F, G, H пустые)
+      const isBaseRow = !row[5] && !row[6] && !row[7];
+      leadsMap.get(leadId)!.push({
+        row,
+        rowNumber,
+        isBaseRow,
+      });
+
+      // Собираем ключи существующих действий
       const actionKey = createActionKey(row);
       if (actionKey) {
         existingActions.add(actionKey);
       }
-    });
+    }
+
+    console.log(
+      `🎯 Обработка ${leadsMap.size} уникальных сделок (из ${allRows.length} строк)`,
+    );
 
     // Массивы для пакетной обработки
     const updates: Array<{ range: string; values: any[][] }> = [];
     const newRows: (string | number)[][] = [];
 
-    // ВАЖНО: Убираем Promise.all и обрабатываем последовательно
-    // с задержками между запросами к amoCRM
-
     // Функция для задержки
     const delay = (ms: number) =>
       new Promise((resolve) => setTimeout(resolve, ms));
 
-    // Обрабатываем строки по одной, но с задержками
-    for (let i = 0; i < allRows.length; i++) {
-      const row = allRows[i];
-      const currentRowNumber = i + 2;
-      const leadId = Number(row[0]);
+    // Получаем список уникальных сделок
+    const leadIds = Array.from(leadsMap.keys());
+
+    // Обрабатываем УНИКАЛЬНЫЕ сделки
+    for (let i = 0; i < leadIds.length; i++) {
+      const leadId = leadIds[i];
+      const leadRows = leadsMap.get(leadId)!;
+
+      // Находим базовую строку сделки
+      const baseRowInfo = leadRows.find((r) => r.isBaseRow) || leadRows[0];
+      const baseRow = baseRowInfo.row;
+      const baseRowNumber = baseRowInfo.rowNumber;
 
       if (!leadId || isNaN(leadId)) {
-        console.log(`⏭️ Строка ${currentRowNumber}: пропуск, нет leadId`);
+        console.log(`⏭️ Сделка ${leadId}: пропуск, некорректный ID`);
         continue;
       }
 
       console.log(
-        `\n🔄 [${i + 1}/${allRows.length}] Обработка сделки ${leadId}`,
+        `\n🔄 [${i + 1}/${leadIds.length}] Обработка сделки ${leadId} (${leadRows.length} строк)`,
       );
 
       try {
-        // Задержка между запросами к amoCRM (минимум 100мс)
+        // Задержка между запросами к amoCRM
         if (i > 0) {
-          await delay(150); // Задержка 150мс между запросами
+          await delay(150);
         }
 
-        // Получаем timestamp
+        // 1. ПОЛУЧИТЬ ТЕКУЩИЕ ДАННЫЕ СДЕЛКИ ИЗ AMO (только для ответственного)
+        console.log(`   👤 Получение актуальных данных сделки...`);
+        let currentResponsible = '';
+        let currentLeadData: any = null;
+
+        try {
+          // Получаем актуальную информацию о сделке
+          currentLeadData = await amo.getLeadById(leadId);
+          if (currentLeadData && currentLeadData.responsible_user_id) {
+            const user = await amo.getUser(currentLeadData.responsible_user_id);
+            currentResponsible = user ? user.name : '';
+            console.log(`   👤 Текущий ответственный: ${currentResponsible}`);
+          }
+        } catch (error) {
+          if (error instanceof Error)
+            console.log(
+              `   ⚠️ Не удалось получить данные сделки: ${error.message}`,
+            );
+        }
+
+        // 2. ОБНОВИТЬ ТОЛЬКО ОТВЕТСТВЕННОГО В БАЗОВОЙ СТРОКЕ
+        if (currentResponsible && currentResponsible !== baseRow[4]) {
+          console.log(
+            `   ✏️ Обновление ответственного с "${baseRow[4]}" на "${currentResponsible}"`,
+          );
+
+          updates.push({
+            range: `E${baseRowNumber}:E${baseRowNumber}`, // Только колонка E
+            values: [[currentResponsible]],
+          });
+
+          // Обновляем локальную копию
+          baseRow[4] = currentResponsible;
+        }
+
+        // Получаем timestamp для остальных запросов
         let createdAtTimestamp: number;
         try {
-          const leadCreatedAt = row[3];
+          const leadCreatedAt = baseRow[3];
           createdAtTimestamp = Math.floor(
             new Date(leadCreatedAt).getTime() / 1000,
           );
@@ -230,38 +322,41 @@ export const updateReportControlDaily = async (): Promise<void> => {
           createdAtTimestamp = Math.floor(Date.now() / 1000);
         }
 
-        // ПОСЛЕДОВАТЕЛЬНО получаем данные сделки (без Promise.all)
+        // 3. ПОЛУЧИТЬ ДАННЫЕ ДЛЯ НОВЫХ СТРОК
         let fromContact = null;
         let fromNotes = null;
         let tasks: Task[] = [];
+        let leadStatusChanged: LeadStatusChangedEvent[] = [];
+        let leadResponsibleChanged: LeadResponsibleChangedEvent[] = [];
 
         try {
-          // 1. Получаем fromContact
           console.log(`   📞 Получение контактов...`);
           fromContact = await incomingActionDateFromContact(
             leadId,
             createdAtTimestamp,
           );
-
-          // Задержка между запросами к amoCRM
           await delay(100);
 
-          // 2. Получаем fromNotes
           console.log(`   📝 Получение примечаний...`);
           fromNotes = await incomingCallDate(leadId);
-
-          // Задержка между запросами к amoCRM
           await delay(100);
 
-          // 3. Получаем задачи
           console.log(`   ✅ Получение задач...`);
           tasks = await amo.getTasks(leadId);
+          await delay(100);
+
+          console.log(`   ✅ Получение статусов...`);
+          leadStatusChanged = await amo.getStatusChanged(leadId);
+          await delay(100);
+
+          console.log(`   ✅ Получение ответственных...`);
+          leadResponsibleChanged = await amo.getResponsibleChanged(leadId);
         } catch (error) {
           console.error(
             `   ⚠️ Ошибка получения данных для сделки ${leadId}:`,
             error,
           );
-          continue; // Пропускаем эту сделку при ошибке
+          continue;
         }
 
         const communications = [
@@ -270,57 +365,312 @@ export const updateReportControlDaily = async (): Promise<void> => {
         ];
         const validTasks = tasks.filter((t) => t.result.text || t.text);
 
-        if (!validTasks.length && !communications.length) {
-          console.log(`   ⏭️ Нет действий для сделки ${leadId}`);
+        if (
+          !validTasks.length &&
+          !communications.length &&
+          !leadStatusChanged.length &&
+          !leadResponsibleChanged.length
+        ) {
+          console.log(`   ⏭️ Нет новых действий для сделки ${leadId}`);
           continue;
         }
 
         console.log(
-          `   📊 Найдено: ${communications.length} комм., ${validTasks.length} задач`,
+          `   📊 Найдено действий: ${communications.length} комм., ${validTasks.length} задач, ${leadStatusChanged.length} статусов, ${leadResponsibleChanged.length} ответственных`,
         );
 
-        // Новые действия для этой сделки
-        const localNewRows: (string | number)[][] = [];
-        let shouldUpdateBaseRow = false;
-        let updateRowData: (string | number)[] = [];
-        const isBaseRowEmpty = !row[5] && !row[6] && !row[7]; // F, G, H пустые
+        // 4. НАЙТИ ПЕРВОЕ ДЕЙСТВИЕ ДЛЯ ЗАПОЛНЕНИЯ БАЗОВОЙ СТРОКИ
+        let firstActionRowData: (string | number)[] | null = null;
+        let firstActionTime: number = Infinity;
+        let firstActionSource = '';
 
-        // Обрабатываем коммуникации
-        communications.forEach((touch) => {
-          if (touch.source === 'Звонок') {
-            // Проверяем, есть ли ссылка
-            if (!touch.linkCall || touch.linkCall === '-') {
-              console.log(
-                `   ⚠️ Пропуск звонка без ссылки для сделки ${leadId}`,
-              );
-              return;
+        // Проверяем, пустая ли базовая строка (F, G, H пустые)
+        const isBaseRowEmpty = !baseRow[5] && !baseRow[6] && !baseRow[7];
+
+        // Если базовая строка не пустая, пропускаем заполнение
+        if (!isBaseRowEmpty) {
+          console.log(`   ⏭️ Базовая строка уже заполнена, пропускаем`);
+        } else {
+          console.log(
+            `   🔍 Поиск первого действия для заполнения базовой строки...`,
+          );
+
+          // Ищем первое действие по времени среди всех типов
+
+          // 4.1. Проверяем коммуникации
+          for (const touch of communications) {
+            if (touch.source === 'Звонок' && !touch.linkCall) {
+              continue;
             }
 
-            // Дополнительно: проверяем, не является ли это дубликатом email/письма
-            // Если у нас уже есть письмо с таким же текстом и временем
-            const sameTextAction = communications.find(
-              (other) =>
-                other !== touch &&
-                other.time === touch.time &&
-                other.source !== 'Звонок',
-            );
+            if (touch.time < firstActionTime) {
+              firstActionTime = touch.time;
+              const [y, mon, d, h, m, s] = getDate(touch.time);
+              const responsible = await amo.getUser(touch.responsibleUserId);
 
-            if (sameTextAction) {
-              console.log(
-                `   ⚠️ Пропуск дубликата звонка (уже есть ${sameTextAction.source}) для сделки ${leadId}`,
-              );
-              return;
+              firstActionRowData = [
+                leadId, // A
+                baseRow[1] || '', // B
+                baseRow[2] || '', // C
+                baseRow[3] || '', // D
+                baseRow[4] || '', // E (уже обновленный ответственный)
+                touch.core || '', // F
+                touch.source || '', // G
+                touch.text || '', // H
+                `${touch.source} ${touch.source === 'Письмо' || touch.source === 'Звонок' ? (touch.income ? 'вход' : 'исх') : ''}`, // I
+                touch.source === 'Звонок'
+                  ? touch.isDoCall
+                    ? 'Да'
+                    : 'Нет'
+                  : '', // J
+                touch.source === 'Звонок' && touch.isDoCall
+                  ? formatTimeHHMMSS(touch.durationCall || 0)
+                  : '', // K
+                `${y}.${mon}.${d}`, // L
+                `${h}:${m}:${s}`, // M
+                '', // N
+                baseRow[14] || '', // O
+                baseRow[15] || '', // P
+                baseRow[16] || '', // Q
+                touch.linkCall || '', // R
+                '', // S
+                '', // T
+                '', // U
+                '', // V
+                '', // W
+                '', // X
+                '', // Y
+                '', // Z
+                '', // AA
+                '', // AB
+                responsible ? responsible.name : '', // AC
+              ];
+              firstActionSource = touch.source;
             }
           }
 
+          // 4.2. Проверяем задачи
+          for (const task of validTasks) {
+            if (task.created_at < firstActionTime) {
+              firstActionTime = task.created_at;
+              const [y, mon, d, h, m, s] = getDate(task.created_at);
+              const responsible = await amo.getUser(task.responsible_user_id);
+
+              firstActionRowData = [
+                leadId, // A
+                baseRow[1] || '', // B
+                baseRow[2] || '', // C
+                baseRow[3] || '', // D
+                baseRow[4] || '', // E
+                'task', // F
+                'Задачи', // G
+                task.text || '', // H
+                'Встреча', // I
+                task.is_completed ? 'Да' : 'Нет', // J
+                '', // K
+                `${y}.${mon}.${d}`, // L
+                `${h}:${m}:${s}`, // M
+                formatTimeHHMMSS(task.duration), // N
+                baseRow[14] || '', // O
+                baseRow[15] || '', // P
+                baseRow[16] || '', // Q
+                '', // R
+                baseRow[18] || '', // S
+                baseRow[19] || '', // T
+                '', // U
+                '', // V
+                '', // W
+                '', // X
+                '', // Y
+                '', // Z
+                '', // AA
+                '', // AB
+                responsible ? responsible.name : '', // AC
+              ];
+              firstActionSource = 'Задача';
+            }
+          }
+
+          // 4.3. Проверяем смены статусов
+          for (const leadStatus of leadStatusChanged.sort(
+            (a, b) => a.created_at - b.created_at,
+          )) {
+            if (leadStatus.created_at < firstActionTime) {
+              firstActionTime = leadStatus.created_at;
+              const [y, mon, d, h, m, s] = getDate(leadStatus.created_at);
+              const leadBefore = leadStatus.value_before[0].lead_status;
+              const leadAfter = leadStatus.value_after[0].lead_status;
+              const responsible = await amo.getUser(leadStatus.created_by);
+
+              const statusBefore = getStatusLead({
+                statusId: leadBefore.id,
+                pipelineId: leadBefore.pipeline_id,
+              });
+              const pipelineNameBefore =
+                pipelinesMap[leadBefore.pipeline_id] || 'Не найдено';
+              const statusAfter = getStatusLead({
+                statusId: leadAfter.id,
+                pipelineId: leadAfter.pipeline_id,
+              });
+              const pipelineNameAfter =
+                pipelinesMap[leadAfter.pipeline_id] || 'Не найдено';
+
+              firstActionRowData = [
+                leadId, // A
+                baseRow[1] || '', // B
+                baseRow[2] || '', // C
+                baseRow[3] || '', // D
+                baseRow[4] || '', // E
+                'event', // F
+                'Этап/Воронка', // G
+                '', // H
+                '', // I
+                '', // J
+                '', // K
+                ``, // L
+                ``, // M
+                '', // N
+                baseRow[14] || '', // O
+                baseRow[15] || '', // P
+                baseRow[16] || '', // Q
+                '', // R
+                baseRow[18] || '', // S
+                baseRow[19] || '', // T
+                `${y}.${mon}.${d}`, // U
+                `${h}:${m}:${s}`, // V
+                pipelineNameBefore, // W
+                statusBefore, // X
+                pipelineNameAfter, // Y
+                statusAfter, // Z
+                '', // AA
+                '', // AB
+                responsible ? responsible.name : '', // AC
+              ];
+              firstActionSource = 'Этап/Воронка';
+            }
+          }
+
+          // 4.4. Проверяем смены ответственного
+          for (const lead of leadResponsibleChanged.sort(
+            (a, b) => a.created_at - b.created_at,
+          )) {
+            if (lead.created_at < firstActionTime) {
+              firstActionTime = lead.created_at;
+              const [y, mon, d, h, m, s] = getDate(lead.created_at);
+              let responsibleChanged = 'Робот';
+
+              if (lead.created_by) {
+                const user = await amo.getUser(lead.created_by);
+                responsibleChanged = user ? user.name : '';
+              }
+              const leadBefore = lead.value_before[0].responsible_user;
+              const leadAfter = lead.value_after[0].responsible_user;
+
+              const responsibleBefore = await amo.getUser(leadBefore.id);
+              const responsibleAfter = await amo.getUser(leadAfter.id);
+
+              firstActionRowData = [
+                leadId, // A
+                baseRow[1] || '', // B
+                baseRow[2] || '', // C
+                baseRow[3] || '', // D
+                baseRow[4] || '', // E
+                'event', // F
+                'Смена ответственного', // G
+                '', // H
+                '', // I
+                '', // J
+                '', // K
+                ``, // L
+                ``, // M
+                '', // N
+                baseRow[14] || '', // O
+                baseRow[15] || '', // P
+                baseRow[16] || '', // Q
+                '', // R
+                baseRow[18] || '', // S
+                baseRow[19] || '', // T
+                ``, // U
+                ``, // V
+                '', // W
+                '', // X
+                '', // Y
+                '', // Z
+                responsibleBefore ? responsibleBefore.name : '', // AA
+                responsibleAfter ? responsibleAfter.name : '', // AB
+                responsibleChanged, // AC
+                `${y}.${mon}.${d}`, // AD
+                `${h}:${m}:${s}`, // AE
+              ];
+              firstActionSource = 'Смена ответственного';
+            }
+          }
+
+          // 5. ЗАПОЛНИТЬ БАЗОВУЮ СТРОКУ ПЕРВЫМ ДЕЙСТВИЕМ
+          if (firstActionRowData) {
+            console.log(
+              `   ✅ Найдено первое действие: ${firstActionSource} от ${new Date(firstActionTime * 1000).toLocaleString()}`,
+            );
+
+            // Проверяем, что это действие еще не существует
+            const actionKey = createActionKey(firstActionRowData);
+            if (!existingActions.has(actionKey)) {
+              // Обновляем базовую строку
+              console.log(firstActionRowData, 'ЗДЕЕЕЕЕСЬ!!!');
+              updates.push({
+                range: `A${baseRowNumber}:AE${baseRowNumber}`,
+                values: [firstActionRowData],
+              });
+
+              // Обновляем локальную копию
+              for (let j = 0; j < firstActionRowData.length; j++) {
+                baseRow[j] = firstActionRowData[j];
+              }
+
+              console.log(
+                `   ✏️ Базовая строка заполнена первым действием (${firstActionSource})`,
+              );
+
+              // Добавляем ключ в существующие действия
+              existingActions.add(actionKey);
+            } else {
+              console.log(`   ⚠️ Первое действие уже существует, пропускаем`);
+            }
+          } else {
+            console.log(`   ⚠️ Не найдено подходящих действий для заполнения`);
+          }
+        }
+
+        // 6. СОЗДАТЬ ОСТАЛЬНЫЕ НОВЫЕ СТРОКИ (кроме первого действия)
+        const localNewRows: (string | number)[][] = [];
+
+        // Обрабатываем коммуникации (кроме первого действия)
+        for (const touch of communications) {
+          if (
+            touch.source === 'Звонок' &&
+            (!touch.linkCall || touch.linkCall === '-')
+          ) {
+            continue;
+          }
+
+          // Пропускаем первое действие, если оно уже было использовано для заполнения базовой строки
+          if (
+            firstActionRowData &&
+            touch.time === firstActionTime &&
+            touch.source === firstActionSource
+          ) {
+            continue;
+          }
+
           const [y, mon, d, h, m, s] = getDate(touch.time);
+          const responsible = await amo.getUser(touch.responsibleUserId);
 
           const rowData = [
             leadId, // A
-            row[1] || '', // B
-            row[2] || '', // C
-            row[3] || '', // D
-            row[4] || '', // E
+            baseRow[1] || '', // B
+            baseRow[2] || '', // C
+            baseRow[3] || '', // D
+            baseRow[4] || '', // E
             touch.core || '', // F
             touch.source || '', // G
             touch.text || '', // H
@@ -331,36 +681,51 @@ export const updateReportControlDaily = async (): Promise<void> => {
               : '', // K
             `${y}.${mon}.${d}`, // L
             `${h}:${m}:${s}`, // M
-            '-', // N
-            row[14] || '', // O
-            row[15] || '', // P
-            row[16] || '', // Q
+            '', // N
+            baseRow[14] || '', // O
+            baseRow[15] || '', // P
+            baseRow[16] || '', // Q
             touch.linkCall || '', // R
+            '', // S
+            '', // T
+            '', // U
+            '', // V
+            '', // W
+            '', // X
+            '', // Y
+            '', // Z
+            '', // AA
+            '', // AB
+            responsible ? responsible.name : '', // AC
           ];
 
           const actionKey = createActionKey(rowData);
           if (actionKey && !existingActions.has(actionKey)) {
             localNewRows.push(rowData);
             existingActions.add(actionKey);
-
-            // Если это первое действие и базовая строка пустая
-            if (isBaseRowEmpty && updateRowData.length === 0) {
-              shouldUpdateBaseRow = true;
-              updateRowData = [...rowData];
-            }
           }
-        });
+        }
 
-        // Обрабатываем задачи
-        validTasks.forEach((task) => {
+        // Обрабатываем задачи (кроме первого действия)
+        for (const task of validTasks) {
+          // Пропускаем первое действие
+          if (
+            firstActionRowData &&
+            task.created_at === firstActionTime &&
+            firstActionSource === 'Задача'
+          ) {
+            continue;
+          }
+
           const [y, mon, d, h, m, s] = getDate(task.created_at);
+          const responsible = await amo.getUser(task.responsible_user_id);
 
           const rowData = [
             leadId, // A
-            row[1] || '', // B
-            row[2] || '', // C
-            row[3] || '', // D
-            row[4] || '', // E
+            baseRow[1] || '', // B
+            baseRow[2] || '', // C
+            baseRow[3] || '', // D
+            baseRow[4] || '', // E
             'task', // F
             'Задачи', // G
             task.text || '', // H
@@ -370,81 +735,199 @@ export const updateReportControlDaily = async (): Promise<void> => {
             `${y}.${mon}.${d}`, // L
             `${h}:${m}:${s}`, // M
             formatTimeHHMMSS(task.duration), // N
-            row[14] || '', // O
-            row[15] || '', // P
-            row[16] || '', // Q
-            '-', // R
+            baseRow[14] || '', // O
+            baseRow[15] || '', // P
+            baseRow[16] || '', // Q
+            '', // R
+            baseRow[18] || '', // S
+            baseRow[19] || '', // T
+            '', // U
+            '', // V
+            '', // W
+            '', // X
+            '', // Y
+            '', // Z
+            '', // AA
+            '', // AB
+            responsible ? responsible.name : '', // AC
           ];
 
           const actionKey = createActionKey(rowData);
           if (actionKey && !existingActions.has(actionKey)) {
             localNewRows.push(rowData);
             existingActions.add(actionKey);
-
-            // Если это первое действие и базовая строка пустая
-            if (isBaseRowEmpty && updateRowData.length === 0) {
-              shouldUpdateBaseRow = true;
-              updateRowData = [...rowData];
-            }
-          }
-        });
-
-        // Добавляем обновление базовой строки
-        if (shouldUpdateBaseRow && updateRowData.length > 0) {
-          updates.push({
-            range: `A${currentRowNumber}:R${currentRowNumber}`,
-            values: [updateRowData],
-          });
-
-          console.log(`   ✏️ Будет обновлена строка ${currentRowNumber}`);
-
-          // Убираем это действие из localNewRows если оно там есть
-          const actionKey = createActionKey(updateRowData);
-          const actionIndex = localNewRows.findIndex(
-            (r) => createActionKey(r) === actionKey,
-          );
-          if (actionIndex !== -1) {
-            localNewRows.splice(actionIndex, 1);
           }
         }
 
-        // Добавляем оставшиеся новые строки
+        // Обрабатываем воронки и этапы (кроме первого действия)
+        for (const leadStatus of leadStatusChanged.sort(
+          (a, b) => a.created_at - b.created_at,
+        )) {
+          // Пропускаем первое действие
+          if (
+            firstActionRowData &&
+            leadStatus.created_at === firstActionTime &&
+            firstActionSource === 'Этап/Воронка'
+          ) {
+            continue;
+          }
+
+          const [y, mon, d, h, m, s] = getDate(leadStatus.created_at);
+          const leadBefore = leadStatus.value_before[0].lead_status;
+          const leadAfter = leadStatus.value_after[0].lead_status;
+          const responsible = await amo.getUser(leadStatus.created_by);
+
+          const statusBefore = getStatusLead({
+            statusId: leadBefore.id,
+            pipelineId: leadBefore.pipeline_id,
+          });
+          const pipelineNameBefore =
+            pipelinesMap[leadBefore.pipeline_id] || 'Не найдено';
+          const statusAfter = getStatusLead({
+            statusId: leadAfter.id,
+            pipelineId: leadAfter.pipeline_id,
+          });
+          const pipelineNameAfter =
+            pipelinesMap[leadAfter.pipeline_id] || 'Не найдено';
+
+          const rowData = [
+            leadId, // A
+            baseRow[1] || '', // B
+            baseRow[2] || '', // C
+            baseRow[3] || '', // D
+            baseRow[4] || '', // E
+            'event', // F
+            'Этап/Воронка', // G
+            '', // H
+            '', // I
+            '', // J
+            '', // K
+            ``, // L
+            ``, // M
+            '', // N
+            baseRow[14] || '', // O
+            baseRow[15] || '', // P
+            baseRow[16] || '', // Q
+            '', // R
+            baseRow[18] || '', // S
+            baseRow[19] || '', // T
+            `${y}.${mon}.${d}`, // U
+            `${h}:${m}:${s}`, // V
+            pipelineNameBefore, // W
+            statusBefore, // X
+            pipelineNameAfter, // Y
+            statusAfter, // Z
+            '', // AA
+            '', // AB
+            responsible ? responsible.name : '', // AC
+          ];
+
+          const actionKey = createActionKey(rowData);
+          if (actionKey && !existingActions.has(actionKey)) {
+            localNewRows.push(rowData);
+            existingActions.add(actionKey);
+          }
+        }
+
+        // Обрабатываем смену ответственного (кроме первого действия)
+        for (const lead of leadResponsibleChanged.sort(
+          (a, b) => a.created_at - b.created_at,
+        )) {
+          // Пропускаем первое действие
+          if (
+            firstActionRowData &&
+            lead.created_at === firstActionTime &&
+            firstActionSource === 'Смена ответственного'
+          ) {
+            continue;
+          }
+
+          const [y, mon, d, h, m, s] = getDate(lead.created_at);
+          let responsibleChanged = 'Робот';
+
+          if (lead.created_by) {
+            const user = await amo.getUser(lead.created_by);
+            responsibleChanged = user ? user.name : '';
+          }
+          const leadBefore = lead.value_before[0].responsible_user;
+          const leadAfter = lead.value_after[0].responsible_user;
+
+          const responsibleBefore = await amo.getUser(leadBefore.id);
+          const responsibleAfter = await amo.getUser(leadAfter.id);
+
+          const rowData = [
+            leadId, // A
+            baseRow[1] || '', // B
+            baseRow[2] || '', // C
+            baseRow[3] || '', // D
+            baseRow[4] || '', // E
+            'event', // F
+            'Смена ответственного', // G
+            '', // H
+            '', // I
+            '', // J
+            '', // K
+            ``, // L
+            ``, // M
+            '', // N
+            baseRow[14] || '', // O
+            baseRow[15] || '', // P
+            baseRow[16] || '', // Q
+            '', // R
+            baseRow[18] || '', // S
+            baseRow[19] || '', // T
+            ``, // U
+            ``, // V
+            '', // W
+            '', // X
+            '', // Y
+            '', // Z
+            responsibleBefore ? responsibleBefore.name : '', // AA
+            responsibleAfter ? responsibleAfter.name : '', // AB
+            responsibleChanged, // AC
+            `${y}.${mon}.${d}`, // AD
+            `${h}:${m}:${s}`, // AE
+          ];
+
+          const actionKey = createActionKey(rowData);
+          if (actionKey && !existingActions.has(actionKey)) {
+            localNewRows.push(rowData);
+            existingActions.add(actionKey);
+          }
+        }
+
+        // 7. ДОБАВИТЬ ОСТАЛЬНЫЕ НОВЫЕ СТРОКИ
         if (localNewRows.length > 0) {
           newRows.push(...localNewRows);
           console.log(`   ➕ Добавлено ${localNewRows.length} новых действий`);
         }
 
-        // Прогресс каждые 50 сделок
-        if ((i + 1) % 50 === 0) {
+        // Прогресс
+        if ((i + 1) % 20 === 0) {
           console.log(
-            `\n📊 Прогресс: ${i + 1}/${allRows.length} сделок обработано`,
+            `\n📊 Прогресс: ${i + 1}/${leadIds.length} сделок обработано`,
           );
           console.log(
             `   Собрано: ${updates.length} обновлений, ${newRows.length} новых строк`,
           );
-
-          // Можно сделать небольшую паузу после каждых 50 сделок
           await delay(1000);
         }
       } catch (error) {
         console.error(`❌ Ошибка обработки сделки ${leadId}:`, error);
-
-        // Пауза после ошибки
         await delay(500);
       }
     }
 
-    // Выполняем пакетные операции
+    // 7. ВЫПОЛНИТЬ ПАКЕТНЫЕ ОПЕРАЦИИ
     console.log(
       `\n📊 Итоги: ${updates.length} обновлений, ${newRows.length} новых строк`,
     );
 
-    // 1. Пакетное обновление существующих строк
+    // Пакетное обновление существующих строк
     if (updates.length > 0) {
       console.log(`\n🔄 Выполнение ${updates.length} обновлений...`);
 
       const UPDATE_BATCH_SIZE = 30;
-
       for (let i = 0; i < updates.length; i += UPDATE_BATCH_SIZE) {
         const batch = updates.slice(i, i + UPDATE_BATCH_SIZE);
         const batchNumber = Math.floor(i / UPDATE_BATCH_SIZE) + 1;
@@ -462,19 +945,17 @@ export const updateReportControlDaily = async (): Promise<void> => {
           );
         }
 
-        // Задержка между пакетами обновлений
         if (i + UPDATE_BATCH_SIZE < updates.length) {
           await delay(2000);
         }
       }
     }
 
-    // 2. Пакетное добавление новых строк
+    // Пакетное добавление новых строк
     if (newRows.length > 0) {
       console.log(`\n➕ Добавление ${newRows.length} новых строк...`);
 
       const CREATE_BATCH_SIZE = 100;
-
       for (let i = 0; i < newRows.length; i += CREATE_BATCH_SIZE) {
         const batch = newRows.slice(i, i + CREATE_BATCH_SIZE);
         const batchNumber = Math.floor(i / CREATE_BATCH_SIZE) + 1;
@@ -503,7 +984,6 @@ export const updateReportControlDaily = async (): Promise<void> => {
           }
         }
 
-        // Задержка между пакетами
         if (i + CREATE_BATCH_SIZE < newRows.length) {
           await delay(2000);
         }
@@ -519,12 +999,30 @@ export const updateReportControlDaily = async (): Promise<void> => {
 
 // Функция для создания уникального ключа действия
 function createActionKey(rowData: (string | number)[]): string {
-  // Ключ на основе ID сделки + источника + текста + времени
   const leadId = rowData[0];
   const source = rowData[6]; // G
+
+  // Для событий этапов/воронок
+  if (source === 'Этап/Воронка') {
+    const oldStatus = rowData[23]; // X
+    const newStatus = rowData[25]; // Z
+    const date = rowData[11] || rowData[20]; // L или U
+    const time = rowData[12] || rowData[21]; // M или V
+    return `stage_${leadId}_${oldStatus}_${newStatus}_${date}_${time}`;
+  }
+
+  // Для смены ответственного
+  if (source === 'Смена ответственного') {
+    const oldResp = rowData[30]; // AA
+    const newResp = rowData[31]; // AB
+    const date = rowData[33];
+    const time = rowData[34];
+    return `resp_${leadId}_${oldResp}_${newResp}_${date}_${time}`;
+  }
+
+  // Для обычных действий
   const text = rowData[7]; // H
   const date = rowData[11]; // L
   const time = rowData[12]; // M
-
-  return `${leadId}_${source}_${text}_${date}_${time}`;
+  return `default_${leadId}_${source}_${text}_${date}_${time}`;
 }

@@ -1,5 +1,13 @@
 import 'dotenv/config';
-import { IUser, Lead, noteType, Pipeline, Task } from '../interfaces';
+import {
+  IUser,
+  Lead,
+  LeadResponsibleChangedEvent,
+  LeadStatusChangedEvent,
+  noteType,
+  Pipeline,
+  Task,
+} from '../interfaces';
 import { DOMAIN } from '../modules/contants';
 
 interface LinkData {
@@ -15,6 +23,7 @@ export class AmoAPI {
   private readonly domain: string;
   private readonly apiUrl: string;
   private readonly pipelinesUrl: string;
+  private readonly baseUrl: string;
 
   // Кэш пользователей
   private usersCache: Map<number, IUser> = new Map();
@@ -26,6 +35,7 @@ export class AmoAPI {
   constructor() {
     this.token = process.env.FETCH_API_TOKEN || '';
     this.domain = DOMAIN;
+    this.baseUrl = `https://${this.domain}.amocrm.ru/api/v4`;
     this.apiUrl = `https://${this.domain}.amocrm.ru/api/v4/leads`;
     this.pipelinesUrl = `https://${this.domain}.amocrm.ru/api/v4/leads/pipelines`;
   }
@@ -330,5 +340,21 @@ export class AmoAPI {
     const data = await response.json();
 
     return data._embedded.tasks;
+  }
+  async getResponsibleChanged(
+    idLead: number,
+  ): Promise<LeadResponsibleChangedEvent[]> {
+    const url = `${this.baseUrl}/events?filter[entity]=lead&filter[entity_id]=${idLead}&filter[type]=entity_responsible_changed`;
+    const response = await this.fetchWithAuth(url);
+    const data = await response.json();
+
+    return data._embedded.events;
+  }
+  async getStatusChanged(idLead: number): Promise<LeadStatusChangedEvent[]> {
+    const url = `${this.baseUrl}/events?filter[entity]=lead&filter[entity_id]=${idLead}&filter[type]=lead_status_changed`;
+    const response = await this.fetchWithAuth(url);
+    const data = await response.json();
+
+    return data._embedded.events;
   }
 }

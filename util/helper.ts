@@ -100,6 +100,24 @@ export function formatDiff(ms: number): string {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 }
 
+// Получить дату в формате DD:HH:MM из ms
+export function formatDurationDDHHMM(milliseconds: number): string {
+  // Конвертируем миллисекунды в секунды
+  const totalSeconds = Math.floor(milliseconds / 1000);
+
+  // Вычисляем дни, часы, минуты
+  const days = Math.floor(totalSeconds / (3600 * 24));
+  const hours = Math.floor((totalSeconds % (3600 * 24)) / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+
+  // Форматируем с ведущими нулями для часов и минут
+  const formattedDays = days.toString();
+  const formattedHours = hours.toString().padStart(2, '0');
+  const formattedMinutes = minutes.toString().padStart(2, '0');
+
+  return `${formattedDays}:${formattedHours}:${formattedMinutes}`;
+}
+
 //новые поля
 export function getFieldValue(
   fields: CustomFields[],

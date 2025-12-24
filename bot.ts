@@ -51,6 +51,16 @@ bot.callbackQuery('report-time-last-day-for-quarter', (ctx) =>
   protectedReportTimeLastDay(ctx),
 );
 
+bot.callbackQuery('test', async (ctx) => {
+  await ctx.reply('Начало');
+  await createReportControlByPeriod('01.12.2025', '01.12.2025');
+  await ctx.reply('Обновление полей');
+  await updateReportControlDaily();
+  await ctx.reply('Сортировка');
+  await new ControlSheetService().sortSheetByDate();
+  await ctx.reply('Конец');
+});
+
 // Сортировка
 bot.callbackQuery('sort-for-quartet', (ctx) => sortTableByDate(ctx));
 bot.callbackQuery('sort-all', (ctx) => sortTableByDate(ctx, true));
