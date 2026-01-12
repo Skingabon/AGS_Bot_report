@@ -104,12 +104,7 @@ export const getReportMarketing = async (
     const [startInputDate, endInputDate] = timeDate;
 
     // Получаем ВСЕ данные одним запросом - это ключевое!
-    const rowLength = (
-      await new TimeSheetService().getGoogleSheetData('A')
-    ).flat().length;
-    const allData = await new TimeSheetService().getRangeValues(
-      `A2:AK${rowLength + 1}`,
-    );
+    const allData = await new TimeSheetService().getRangeValues();
 
     const result: IResultLeadMarketing = {
       totalLeads: 0,

@@ -52,12 +52,19 @@ bot.callbackQuery('report-time-last-day-for-quarter', (ctx) =>
 );
 
 bot.callbackQuery('test', async (ctx) => {
+  // await ctx.reply('Начало');
+  // await createReportControlByPeriod('01.12.2025', '02.12.2025');
+  // await ctx.reply('Обновление полей');
+  // await updateReportControlDaily();
+  // await ctx.reply('Сортировка');
+  // await new ControlSheetService().sortSheetByDate();
+  // await ctx.reply('Конец');
   await ctx.reply('Начало');
-  await createReportControlByPeriod('01.12.2025', '01.12.2025');
+  await createReportTimeByPeriod('01.11.2025', '01.12.2025');
   await ctx.reply('Обновление полей');
-  await updateReportControlDaily();
-  await ctx.reply('Сортировка');
-  await new ControlSheetService().sortSheetByDate();
+  await updateAllFiled();
+  await ctx.reply('Звонки');
+  await updateIncomingCall();
   await ctx.reply('Конец');
 });
 
@@ -77,10 +84,6 @@ bot.callbackQuery('report-lead-period', reportLeadPeriod);
 
 bot.callbackQuery('menu', fnStartingCommand);
 bot.callbackQuery('access-create-report', accessCreateReport);
-bot.callbackQuery('test', async (ctx) => {
-  await ctx.reply('Начало');
-  await ctx.reply('Готово');
-});
 
 // Control
 bot.callbackQuery('create-report-control', createAndUpdateControl);

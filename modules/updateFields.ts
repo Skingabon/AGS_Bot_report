@@ -220,14 +220,12 @@ export const updateIncomingCall = async (isAllField = false) => {
   try {
     // Получаем данные из таблицы
     const rowLength =
-      (await new TimeSheetService().getGoogleSheetData('A')).flat().length + 1;
+      (await new TimeSheetService().getColumnData()).flat().length + 1;
     const startRange = new TimeSheetService().startRangeWith(
       isAllField,
       rowLength,
     );
-    const allData = await new TimeSheetService().getRangeValues(
-      `A${startRange}:AL${rowLength}`,
-    );
+    const allData = await new TimeSheetService().getRangeValues();
     // Подготавливаем данные для пакетного обновления
     const sheetUpdates: {
       range: string;
@@ -429,7 +427,7 @@ export const updateIncomingCall = async (isAllField = false) => {
       }
     }
 
-    await Promise.all(amoUpdatesPromises);
+    // await Promise.all(amoUpdatesPromises);
   } catch (err) {
     if (err instanceof Error) {
       console.error(`Глобальная ошибка: ${err.message}`);
@@ -441,14 +439,12 @@ export const updateIncomingCall = async (isAllField = false) => {
 export const updateAllFiled = async (isAllField = false) => {
   try {
     const rowLength =
-      (await new TimeSheetService().getGoogleSheetData('A')).flat().length + 1;
+      (await new TimeSheetService().getColumnData()).flat().length + 1;
     const startRange = new TimeSheetService().startRangeWith(
       isAllField,
       rowLength,
     );
-    const allData = await new TimeSheetService().getRangeValues(
-      `A${startRange}:AL${rowLength}`,
-    );
+    const allData = await new TimeSheetService().getRangeValues();
     const amo = new AmoAPI();
     // Инициализируем кэш пользователей
     await amo.initUsersCache();

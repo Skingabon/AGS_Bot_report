@@ -11,11 +11,14 @@ export class GoogleSheetService {
   protected sheetName: string;
   protected countQuartetRow: number;
   protected columnIndexForSorting: number;
+  protected startRangeColumn: string;
+  protected endRangeColumn: string;
 
   constructor(
     sheetName: string,
     countQuartetRow: number,
     columnIndexForSorting: number,
+    endRangeColumn: string,
   ) {
     this.SPREADSHEET_ID = process.env.SPREADSHEET_ID!;
     this.sheetName = sheetName;
@@ -26,6 +29,8 @@ export class GoogleSheetService {
     });
     this.google = google;
     this.columnIndexForSorting = columnIndexForSorting;
+    this.startRangeColumn = 'A2';
+    this.endRangeColumn = endRangeColumn;
   }
 
   // Получение стартовой строки за квартал
@@ -48,15 +53,14 @@ export class GoogleSheetService {
 
     const columnResponse = await sheets.spreadsheets.values.get({
       spreadsheetId: this.SPREADSHEET_ID,
-      range: `${this.sheetName}!A2:A`,
+      range: `${this.sheetName}!${this.startRangeColumn}:A`,
     });
 
     const values = columnResponse.data.values || [];
     return values.length + 1;
   }
-
   // Получаю все строки в столбце
-  async getGoogleSheetData(field: string = 'A'): Promise<Array<string[]>> {
+  async getColumnData(field: string = 'A'): Promise<Array<string[]>> {
     const sheets = this.google.sheets({ version: 'v4', auth: this.auth });
     const lastRow = await this.getLastRowGoogleSheet();
 
@@ -69,37 +73,27 @@ export class GoogleSheetService {
   }
 
   // Получаю все поля из таблицы
-  async getRangeValues(range: string): Promise<Array<string[]>> {
+  async getRangeValues(
+    startRange = this.startRangeColumn,
+    endRange = this.endRangeColumn,
+  ): Promise<Array<string[]>> {
     const sheets = this.google.sheets({ version: 'v4', auth: this.auth });
 
     try {
       const response = await sheets.spreadsheets.values.get({
         spreadsheetId: this.SPREADSHEET_ID,
-        range: `${this.sheetName}!${range}`,
+        range: `${this.sheetName}!${startRange}:${endRange}`,
         valueRenderOption: 'FORMATTED_VALUE',
       });
 
       return response.data.values || [];
     } catch (error) {
-      console.error(`Ошибка получения диапазона ${range}:`, error);
+      console.error(
+        `Ошибка получения диапазона ${startRange}:${endRange}`,
+        error,
+      );
       return [];
     }
-  }
-
-  async updateGoogleField(
-    data: string,
-    index: number,
-    fieldName: string = 'T',
-  ) {
-    const sheets = this.google.sheets({ version: 'v4', auth: this.auth });
-    const res = await sheets.spreadsheets.values.update({
-      spreadsheetId: this.SPREADSHEET_ID,
-      range: `${this.sheetName}!${fieldName}${index}`,
-      valueInputOption: 'RAW',
-      requestBody: { values: [[data]] },
-    });
-
-    return res;
   }
 
   async createGoogleFields(data: { values: (string | number)[][] }) {
@@ -137,15 +131,14 @@ export class GoogleSheetService {
   }
   async sortSheetByDate(isAllField: boolean = false): Promise<void> {
     const sheets = this.google.sheets({ version: 'v4', auth: this.auth });
-    const lastRow = 'AL';
 
     try {
-      const rowLength = (await this.getGoogleSheetData('A')).flat().length + 1;
+      const rowLength = (await this.getColumnData()).flat().length + 1;
       const startRange = this.startRangeWith(isAllField, rowLength);
 
       const response = await sheets.spreadsheets.values.get({
         spreadsheetId: this.SPREADSHEET_ID,
-        range: `${this.sheetName}!A${startRange}:${lastRow}`,
+        range: `${this.sheetName}!A${startRange}:${this.endRangeColumn}`,
       });
 
       const data: any[][] = response.data.values || [];
@@ -179,7 +172,7 @@ export class GoogleSheetService {
 
       await sheets.spreadsheets.values.update({
         spreadsheetId: this.SPREADSHEET_ID,
-        range: `${this.sheetName}!A${startRange}:${lastRow}`,
+        range: `${this.sheetName}!A${startRange}:${this.endRangeColumn}`,
         valueInputOption: 'RAW',
         requestBody: {
           values: sortedData,
@@ -196,7 +189,7 @@ export class GoogleSheetService {
 // Специализированный класс для листа Time с дополнительной логикой
 export class TimeSheetService extends GoogleSheetService {
   constructor() {
-    super('Time', 1700, 6); // Всегда работаем с листом Time
+    super('Time', 1700, 6, 'AS'); // Всегда работаем с листом Time
   }
 }
 
@@ -205,13 +198,13 @@ export class ControlSheetService extends GoogleSheetService {
   protected readonly maxColumnName: string = 'AE';
   constructor() {
     // TODO: countQuartetRow еще не работает для Control
-    super('Control', 1500, 3);
+    super('Control', 1500, 3, 'AE');
   }
 
   // Получаем последнюю заполненную строку (исправленная версия)
   async getLastRow(): Promise<number> {
     try {
-      const response = await this.getRangeValues('A:A');
+      const response = await this.getRangeValues('A', 'A');
       return response.length + 1; // +1 потому что A2 это первая строка данных
     } catch (error) {
       console.error('Ошибка получения последней строки:', error);
