@@ -1,6 +1,6 @@
 import { CustomFields } from '../interfaces';
 
-// Полчить дату из timestamps
+// Получить дату из timestamps
 export const getDate = (time: number): string[] => {
   const date = new Date(time * 1000);
 
@@ -15,6 +15,21 @@ export const getDate = (time: number): string[] => {
 
   // return `${year}.${month}.${day} ${hours}:${minutes}`;
 };
+
+// Преобразует секунды в HH:MM
+function secondsToHHMM(seconds: number): [string, string] {
+  // Проверка на неотрицательное целое число
+  if (!Number.isInteger(seconds) || seconds < 0) {
+    throw new Error(
+      'Количество секунд должно быть неотрицательным целым числом',
+    );
+  }
+
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+
+  return [String(hours).padStart(2, '0'), String(minutes).padStart(2, '0')];
+}
 
 export const getPeriodTimestamps = (
   dateString1: string,
@@ -100,22 +115,33 @@ export function formatDiff(ms: number): string {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 }
 
-// Получить дату в формате DD:HH:MM из ms
-export function formatDurationDDHHMM(milliseconds: number): string {
-  // Конвертируем миллисекунды в секунды
-  const totalSeconds = Math.floor(milliseconds / 1000);
+// Получить дату в формате DD:HH:MM из секунд
+export function formatDurationDDHHMM(seconds: number): {
+  dd: string;
+  hh: string;
+  mm: string;
+  full: string;
+} {
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    throw new Error('Секунды должны быть неотрицательным числом');
+  }
 
-  // Вычисляем дни, часы, минуты
-  const days = Math.floor(totalSeconds / (3600 * 24));
-  const hours = Math.floor((totalSeconds % (3600 * 24)) / 3600);
+  const totalSeconds = Math.floor(seconds);
+
+  const days = Math.floor(totalSeconds / 86400); // 24*60*60
+  const hours = Math.floor((totalSeconds % 86400) / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
 
-  // Форматируем с ведущими нулями для часов и минут
-  const formattedDays = days.toString();
-  const formattedHours = hours.toString().padStart(2, '0');
-  const formattedMinutes = minutes.toString().padStart(2, '0');
+  const dd = days.toString().padStart(2, '0');
+  const hh = hours.toString().padStart(2, '0');
+  const mm = minutes.toString().padStart(2, '0');
 
-  return `${formattedDays}:${formattedHours}:${formattedMinutes}`;
+  return {
+    dd,
+    hh,
+    mm,
+    full: `${dd}:${hh}:${mm}`,
+  };
 }
 
 //новые поля

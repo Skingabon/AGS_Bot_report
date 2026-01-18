@@ -19,6 +19,7 @@ export interface CreateBaseRowParams {
   year: string;
   status: string;
   pipeline: string;
+  createAt: number;
 }
 
 export interface BaseRowData {
@@ -32,6 +33,7 @@ export interface BaseRowData {
   year: string | number;
   status: string;
   pipeline: string;
+  createAt: number;
 }
 
 export interface ActionRowParams {
@@ -92,6 +94,7 @@ export class ReportRowFactory {
       year,
       status,
       pipeline,
+      createAt,
     } = params;
 
     row[0] = leadId; // A
@@ -112,6 +115,8 @@ export class ReportRowFactory {
     row[19] = pipeline; // T
 
     // U-AE - пустые
+
+    row[31] = createAt;
 
     return row;
   }
@@ -134,6 +139,8 @@ export class ReportRowFactory {
 
     row[18] = baseRow.status || ''; // S: Статус
     row[19] = baseRow.pipeline || ''; // T: Воронка
+
+    row[31] = baseRow.createAt; //
 
     return row;
   }
@@ -195,7 +202,7 @@ export class ReportRowFactory {
     row[5] = 'task'; // F: Тип
     row[6] = 'Задачи'; // G: Источник
     row[7] = task.text || ''; // H: Текст
-    row[8] = 'Встреча'; // I: Тип
+    row[8] = 'Задача'; // I: Тип
     row[9] = task.is_completed ? 'Да' : 'Нет'; // J: Выполнено?
     row[11] = `${y}.${mon}.${d}`; // L: Дата
     row[12] = `${h}:${m}:${s}`; // M: Время
@@ -312,6 +319,7 @@ export class ReportRowFactory {
       year: row[16],
       status: String(row[18] || ''),
       pipeline: String(row[19] || ''),
+      createAt: Number(row[31] || 0),
     };
   }
 
@@ -322,7 +330,7 @@ export class ReportRowFactory {
 
   // Форматирование даты с апострофом для Google Sheets
   static formatDateForGoogleSheets(timestamp: number): string {
-    const [y, mon, d, h, m, s] = getDate(timestamp);
+    const [y, mon, d] = getDate(timestamp);
     // Добавляем апостроф для принудительного текстового формата
     return `'${y}.${mon}.${d}`;
   }

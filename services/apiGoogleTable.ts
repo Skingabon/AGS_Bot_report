@@ -2,6 +2,7 @@ import 'dotenv/config';
 import { google, GoogleApis } from 'googleapis';
 import { parseDateTime } from '../util/helper';
 import { GoogleAuth } from 'google-auth-library';
+import { LeadStatusChangedEvent } from '../interfaces';
 
 // Базовый класс для работы с Google Sheets
 export class GoogleSheetService {
@@ -96,6 +97,58 @@ export class GoogleSheetService {
     }
   }
 
+  // Получаю все поля из таблицы
+  async getRangeValuesNew(
+    startRange = this.startRangeColumn,
+    endRange = this.endRangeColumn,
+    isAllField: boolean = false, // Добавляем параметр
+  ): Promise<Array<string[]>> {
+    const sheets = this.google.sheets({ version: 'v4', auth: this.auth });
+
+    try {
+      // Если запрашиваем полный диапазон (A:последняя_колонка), применяем startRangeWith
+      const isFullRange =
+        startRange === this.startRangeColumn &&
+        (endRange === this.endRangeColumn ||
+          endRange.includes(this.endRangeColumn));
+
+      if (isFullRange) {
+        const rowLength = (await this.getColumnData()).flat().length + 1;
+        const startRow = this.startRangeWith(isAllField, rowLength);
+
+        // Создаем диапазон с учетом ограничения countQuartetRow
+        const rangeWithLimit = `${this.sheetName}!A${startRow}:${endRange}`;
+
+        console.log(
+          `🔍 ${this.sheetName}: Загрузка данных со строки ${startRow} (${isAllField ? 'все строки' : 'последние ' + this.countQuartetRow + ' строк'})`,
+        );
+
+        const response = await sheets.spreadsheets.values.get({
+          spreadsheetId: this.SPREADSHEET_ID,
+          range: rangeWithLimit,
+          valueRenderOption: 'FORMATTED_VALUE',
+        });
+
+        return response.data.values || [];
+      }
+
+      // Иначе используем переданный диапазон как есть
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: this.SPREADSHEET_ID,
+        range: `${this.sheetName}!${startRange}:${endRange}`,
+        valueRenderOption: 'FORMATTED_VALUE',
+      });
+
+      return response.data.values || [];
+    } catch (error) {
+      console.error(
+        `Ошибка получения диапазона ${startRange}:${endRange}`,
+        error,
+      );
+      return [];
+    }
+  }
+
   async createGoogleFields(data: { values: (string | number)[][] }) {
     const sheets = this.google.sheets({ version: 'v4', auth: this.auth });
     await sheets.spreadsheets.values.append({
@@ -148,25 +201,18 @@ export class GoogleSheetService {
       }
 
       const dataWithDebug = data.map((row, index) => {
-        const dateString = row[this.columnIndexForSorting];
-        const parsedDate = parseDateTime(dateString);
+        const timestamp = Number(row[this.columnIndexForSorting]);
 
         return {
           originalIndex: index,
           row: row,
-          dateString: dateString,
-          parsedDate: parsedDate,
-          timestamp: parsedDate ? parsedDate.getTime() : 0,
+          timestamp,
         };
       });
 
-      const sortedWithDebug = dataWithDebug.sort((a, b) => {
-        if (!a.parsedDate && !b.parsedDate) return 0;
-        if (!a.parsedDate) return 1;
-        if (!b.parsedDate) return -1;
-
-        return a.timestamp - b.timestamp;
-      });
+      const sortedWithDebug = dataWithDebug.sort(
+        (a, b) => a.timestamp - b.timestamp,
+      );
 
       const sortedData = sortedWithDebug.map((item) => item.row);
 
@@ -183,25 +229,78 @@ export class GoogleSheetService {
       throw error;
     }
   }
-  // Пакетное создание строк (под капотом использует batchUpdate)
+
+  async sortSheetByDateNew(isAllField: boolean = false): Promise<void> {
+    const sheets = this.google.sheets({ version: 'v4', auth: this.auth });
+
+    try {
+      const rowLength = (await this.getColumnData()).flat().length + 1;
+      const startRange = this.startRangeWith(isAllField, rowLength);
+
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: this.SPREADSHEET_ID,
+        range: `${this.sheetName}!A${startRange}:${this.endRangeColumn}`,
+      });
+
+      const data: any[][] = response.data.values || [];
+      if (data.length === 0) {
+        console.log('Нет данных для сортировки');
+        return;
+      }
+
+      console.log(
+        `🔍 ${this.sheetName}: Сортировка ${data.length} строк по колонке ${this.columnIndexForSorting}`,
+      );
+
+      const dataWithDebug = data.map((row, index) => {
+        const timestamp = Number(row[this.columnIndexForSorting]);
+
+        return {
+          originalIndex: index,
+          row: row,
+          timestamp,
+        };
+      });
+
+      const sortedWithDebug = dataWithDebug.sort(
+        (a, b) => a.timestamp - b.timestamp,
+      );
+
+      const sortedData = sortedWithDebug.map((item) => item.row);
+
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: this.SPREADSHEET_ID,
+        range: `${this.sheetName}!A${startRange}:${this.endRangeColumn}`,
+        valueInputOption: 'RAW',
+        requestBody: {
+          values: sortedData,
+        },
+      });
+
+      console.log(`✅ ${this.sheetName}: Отсортировано ${data.length} строк`);
+    } catch (error) {
+      console.error('Ошибка сортировки:', error);
+      throw error;
+    }
+  }
 }
 
 // Специализированный класс для листа Time с дополнительной логикой
 export class TimeSheetService extends GoogleSheetService {
   constructor() {
-    super('Time', 1700, 6, 'AS'); // Всегда работаем с листом Time
+    super('Time', 1700, 45, 'AT');
   }
 }
 
 // Специализированный класс для листа Control
 export class ControlSheetService extends GoogleSheetService {
-  protected readonly maxColumnName: string = 'AE';
+  protected readonly maxColumnName: string = 'AF';
   constructor() {
     // TODO: countQuartetRow еще не работает для Control
-    super('Control', 1500, 3, 'AE');
+    super('Control', 3500, 31, 'AF');
   }
 
-  // Получаем последнюю заполненную строку (исправленная версия)
+  // Получаем последнюю заполненную строку
   async getLastRow(): Promise<number> {
     try {
       const response = await this.getRangeValues('A', 'A');

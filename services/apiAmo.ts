@@ -139,6 +139,7 @@ export class AmoAPI {
         this.usersCache.clear();
 
         // Заполняем кэш
+        console.log('Заполняем кэш');
         users.forEach((user) => {
           this.usersCache.set(user.id, user);
         });

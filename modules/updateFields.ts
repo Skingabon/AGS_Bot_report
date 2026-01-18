@@ -1,17 +1,15 @@
 import { isMessageNote, Lead } from '../interfaces';
 import {
-  formatDate,
-  formatDiff,
   formatDurationDDHHMM,
   formatSecondsToHHMM,
   getDate,
-  getFieldValue,
-  parseCustomDate,
-  safeParseDate,
 } from '../util/helper';
-import { TimeSheetService } from '../services/apiGoogleTable';
+import {
+  ControlSheetService,
+  TimeSheetService,
+} from '../services/apiGoogleTable';
 import { AmoAPI } from '../services/apiAmo';
-import { getParamsLead } from './utils';
+import { getDataStatusLead, getParamsLead } from './utils';
 
 type requiredCommunicationType = {
   id: number;
@@ -216,124 +214,130 @@ function isInvalidDateIncoming({
 }
 
 //Заполняю звонки за прошлые периоды если их небыло раньше
-export const updateIncomingCall = async (isAllField = false) => {
-  try {
-    // Получаем данные из таблицы
-    const rowLength =
-      (await new TimeSheetService().getColumnData()).flat().length + 1;
-    const startRange = new TimeSheetService().startRangeWith(
-      isAllField,
-      rowLength,
-    );
-    const allData = await new TimeSheetService().getRangeValues();
-    // Подготавливаем данные для пакетного обновления
-    const sheetUpdates: {
-      range: string;
-      values: (string | number)[][];
-    }[] = [];
+export const updateIncomingCall = async (isAllField = false): Promise<void> => {
+  const startTime = Date.now();
 
-    const amoUpdatesPromises: Promise<void>[] = [];
-    const batchSize = 50;
+  try {
+    const amo = new AmoAPI();
+    const sheet = new TimeSheetService();
+
+    // Получаем данные из таблицы
+    const rowLength = (await sheet.getColumnData()).flat().length + 1;
+    const startRange = sheet.startRangeWith(isAllField, rowLength);
+    const allData = await sheet.getRangeValues();
+
+    console.log(`📊 Всего строк для обработки: ${allData.length}`);
+
+    // НАСТРОЙКИ ДЛЯ AMOCRM API
+    const AMOCRM_RATE_LIMIT = 7; // 7 запросов в секунду (у amoCRM обычно 7-10/сек)
+    const BATCH_SIZE = 50; // Оптимальный размер пакета
+    const DELAY_BETWEEN_BATCHES = 2000; // 2 секунды
+
     let processedCount = 0;
     let skippedCount = 0;
+    let amoRequestsInLastSecond = 0;
+    let lastRequestTime = Date.now();
 
-    // Обрабатываем лиды пакетами
-    for (let i = 0; i < allData.length; i += batchSize) {
-      const batch = allData.slice(i, i + batchSize);
+    // Функция для контроля скорости запросов к amoCRM
+    const rateLimitAmoCRM = async () => {
+      const now = Date.now();
+      const timeSinceLastRequest = now - lastRequestTime;
 
+      // Если прошла секунда, сбрасываем счетчик
+      if (timeSinceLastRequest >= 1000) {
+        amoRequestsInLastSecond = 0;
+        lastRequestTime = now;
+      }
+
+      // Если превысили лимит, ждем
+      if (amoRequestsInLastSecond >= AMOCRM_RATE_LIMIT) {
+        const waitTime = 1000 - timeSinceLastRequest + 100; // +100 мс для надежности
+        if (waitTime > 0) {
+          await new Promise((resolve) => setTimeout(resolve, waitTime));
+          amoRequestsInLastSecond = 0;
+          lastRequestTime = Date.now();
+        }
+      }
+
+      amoRequestsInLastSecond++;
+    };
+
+    // Обрабатываем пакетами
+    for (let i = 0; i < allData.length; i += BATCH_SIZE) {
+      const batchStartTime = Date.now();
+      const batch = allData.slice(i, i + BATCH_SIZE);
+      const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
+      const totalBatches = Math.ceil(allData.length / BATCH_SIZE);
+
+      console.log(
+        `\n🔧 Пакет ${batchNumber}/${totalBatches} (${batch.length} строк)`,
+      );
+
+      const batchUpdates: {
+        range: string;
+        values: (string | number)[][];
+      }[] = [];
+
+      // Обрабатываем строки в пакете
       for (let j = 0; j < batch.length; j++) {
         const row = batch[j];
         const globalIndex = i + j;
-
-        const idLeadFromTable = row[0] || ''; // A
-        const stageLead = row[4]; // E
-        const inWorking = row[7]; // H
-        const firstTouch = row[19]; // T
-        const performer = row[37]; // AL
         const rowNumber = globalIndex + startRange;
 
-        // 1. Пропускаем если статус "Закрыто и не реализовано" и не квал
+        const idLeadFromTable = row[0] || '';
+        const stageLead = row[4];
+        const inWorking = row[7];
+        const firstTouch = row[19];
+        const performer = row[37];
+
+        // БЫСТРЫЕ ПРОВЕРКИ
         if (
-          stageLead === 'Закрыто и не реализовано' &&
-          performer === 'Не Квал'
+          (stageLead === 'Закрыто и не реализовано' &&
+            performer === 'Не Квал') ||
+          !inWorking ||
+          inWorking.trim() === '' ||
+          (firstTouch && firstTouch.includes('/'))
         ) {
-          sheetUpdates.push({
-            range: `T${rowNumber}:V${rowNumber}`,
-            values: [['Не актуально', '-', '-']],
-          });
           skippedCount++;
           continue;
         }
 
-        if (!inWorking || inWorking.trim() === '') {
-          sheetUpdates.push({
-            range: `T${rowNumber}:V${rowNumber}`,
-            values: [['-', '-', '-']],
-          });
-          skippedCount++;
-          continue;
-        }
+        // Проверка ID
+        if (!idLeadFromTable) continue;
+        const idLead = Number(idLeadFromTable);
+        if (isNaN(idLead) || idLead === 0) continue;
 
-        if (firstTouch.includes('/')) {
-          // Если уже есть нормальные данные - пропускаем
-          // console.log(
-          //   `Пропускаем строку ${rowNumber} - уже есть данные: "${firstTouch}"`,
-          // );
-          skippedCount++;
-          continue;
-        }
         try {
-          // Проверка валидности ID
-          if (!idLeadFromTable) continue;
-          const idLead = Number(idLeadFromTable);
+          // КОНТРОЛЬ СКОРОСТИ ДЛЯ AMOCRM
+          await rateLimitAmoCRM();
 
-          if (isNaN(Number(idLead)) || Number(idLead) === 0) {
-            sheetUpdates.push({
-              range: `T${rowNumber}:V${rowNumber}`,
-              values: [['Неверный ID', '-', '-']],
-            });
-            continue;
-          }
+          // 1. Получаем лид
+          const lead = await amo.getLeadById(idLead);
+          if (!lead) continue;
 
-          const lead = await new AmoAPI().getLeadById(idLead);
-
-          if (!lead) {
-            sheetUpdates.push({
-              range: `T${rowNumber}:V${rowNumber}`,
-              values: [['Лид не найден', '-', '-']],
-            });
-            continue;
-          }
-
+          // 2. Получаем входящее действие
+          await rateLimitAmoCRM();
           const incomingAction = await getCreatedAtIncomingCallOrMessage(lead);
+          if (!incomingAction) continue;
 
-          if (!incomingAction) {
-            sheetUpdates.push({
-              range: `T${rowNumber}:V${rowNumber}`,
-              values: [['Мы не ответили', '-', '-']],
-            });
-            continue;
-          }
-
+          // 3. Проверяем дату
           if (
             isInvalidDateIncoming({
               createAtLead: lead.created_at,
               createAtIncoming: incomingAction.time,
             })
           ) {
-            sheetUpdates.push({
-              range: `T${rowNumber}:V${rowNumber}`,
-              values: [['Старый лид', '-', '-']],
-            });
             continue;
           }
 
-          // Обработка данных...
-          const fields = lead.custom_fields_values || [];
+          // 4. Получаем статусы
+          await rateLimitAmoCRM();
+          const { leadStatusEngine, leadStatusSerial } =
+            await getDataStatusLead(amo, lead);
 
+          // Рассчитываем данные
           const createdAtLead = lead.created_at;
-
-          let timeAllWork = '-';
+          let timeAllWork = '';
           if (createdAtLead && incomingAction.time) {
             timeAllWork = formatSecondsToHHMM(
               incomingAction.time - createdAtLead,
@@ -341,110 +345,166 @@ export const updateIncomingCall = async (isAllField = false) => {
           }
 
           let deltaTimeFirstResponse = '';
-          const omAssignedAt = formatDate(
-            getFieldValue(fields, 'Время ОМ квал серия'),
-          );
-          const omRaspredByIngTime = formatDate(
-            getFieldValue(fields, 'Время Распр ОМ квал ИНЖ'),
-          );
-
-          const assignedAtDate = omAssignedAt
-            ? parseCustomDate(omAssignedAt)
-            : null;
-          const raspredIngAtDate = omRaspredByIngTime
-            ? parseCustomDate(omRaspredByIngTime)
-            : null;
-          const omAssignedBy = getFieldValue(fields, 'ОМ Квал серия') || '';
-
-          const [year, month, day, hours, minutes, seconds] = getDate(
-            incomingAction.time,
-          );
-          const dateOutput = `${year}.${month}.${day} ${hours}:${minutes}`;
-          const incomingDate = safeParseDate(dateOutput);
           let deltaTimeFirstWork = '';
 
-          if (incomingDate) {
-            if (omAssignedBy && assignedAtDate) {
-              deltaTimeFirstResponse = formatDiff(
-                incomingDate.getTime() - assignedAtDate.getTime(),
-              );
-              deltaTimeFirstWork = formatDurationDDHHMM(
-                incomingDate.getTime() - assignedAtDate.getTime(),
-              );
-            } else if (!omAssignedBy && raspredIngAtDate) {
-              deltaTimeFirstResponse = formatDiff(
-                incomingDate.getTime() - raspredIngAtDate.getTime(),
-              );
-              deltaTimeFirstWork = formatDurationDDHHMM(
-                incomingDate.getTime() - raspredIngAtDate.getTime(),
-              );
-            }
+          if (leadStatusEngine) {
+            const delta = incomingAction.time - leadStatusEngine.created_at;
+            deltaTimeFirstResponse = formatSecondsToHHMM(delta);
+            deltaTimeFirstWork = formatDurationDDHHMM(delta).full;
+          }
+          if (leadStatusSerial) {
+            const delta = incomingAction.time - leadStatusSerial.created_at;
+            deltaTimeFirstResponse = formatSecondsToHHMM(delta);
+            deltaTimeFirstWork = formatDurationDDHHMM(delta).full;
           }
 
-          // Добавляем обновления
-          sheetUpdates.push({
+          const [y, mon, d, h, m, s] = getDate(incomingAction.time);
+          const dateOutput = `${y}.${mon}.${d} ${h}:${m}`;
+
+          // СОБИРАЕМ ОБНОВЛЕНИЯ
+          batchUpdates.push({
             range: `T${rowNumber}:V${rowNumber}`,
             values: [
               [
                 `${dateOutput} / ${incomingAction.source}`,
-                deltaTimeFirstResponse || 'В сделке нет ОМ квал',
+                deltaTimeFirstResponse,
                 timeAllWork,
               ],
             ],
           });
-          sheetUpdates.push({
-            range: `AS${rowNumber}:AS${rowNumber}`,
-            values: [[`${hours}:${minutes}:${seconds}`]],
-          });
 
-          // Дельта от на отвественного до первого касания
-          sheetUpdates.push({
+          batchUpdates.push({
             range: `AM${rowNumber}:AM${rowNumber}`,
-            values: [[`${deltaTimeFirstWork}`]],
+            values: [[deltaTimeFirstWork]],
           });
 
-          amoUpdatesPromises.push(
-            new AmoAPI().updateLeadDateCall(idLead, dateOutput),
-          );
-          processedCount++;
-        } catch (err) {
-          sheetUpdates.push({
-            range: `T${rowNumber}:V${rowNumber}`,
-            values: [['Ошибка обработки', '-', '-']],
+          batchUpdates.push({
+            range: `AS${rowNumber}:AS${rowNumber}`,
+            values: [[`${h}:${m}:${s}`]],
           });
+
+          processedCount++;
+
+          // 5. Обновляем в amoCRM (если нужно)
+          await rateLimitAmoCRM();
+          try {
+            await amo.updateLeadDateCall(idLead, dateOutput);
+          } catch (amoError) {
+            console.log(`⚠️ Ошибка обновления amoCRM: ${idLead}`, amoError);
+          }
+        } catch (err) {
           if (err instanceof Error) {
-            console.log(
-              `Ошибка при обработке лида ${batch[j]}: ${err.message}`,
-            );
+            if (
+              err.message.includes('429') ||
+              err.message.includes('Too Many Requests')
+            ) {
+              console.log(`🛑 Превышен лимит amoCRM. Ждем 10 секунд...`);
+              await new Promise((resolve) => setTimeout(resolve, 10000));
+              // Уменьшаем счетчик запросов
+              amoRequestsInLastSecond = Math.max(
+                0,
+                amoRequestsInLastSecond - 3,
+              );
+              continue; // Пробуем эту строку снова
+            }
+            console.log(`⚠️ Ошибка строки ${rowNumber}:`, err.message);
+          }
+        }
+
+        // Небольшая пауза после каждых 10 строк
+        if (j % 10 === 0 && j > 0) {
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+      }
+
+      // ОТПРАВЛЯЕМ ОБНОВЛЕНИЯ В GOOGLE SHEETS
+      if (batchUpdates.length > 0) {
+        console.log(
+          `📤 Отправка ${batchUpdates.length} обновлений в Google Sheets`,
+        );
+
+        // Разбиваем на подпакеты по 100 запросов
+        const MAX_SHEETS_REQUESTS = 100;
+        const subBatches = [];
+        for (let k = 0; k < batchUpdates.length; k += MAX_SHEETS_REQUESTS) {
+          subBatches.push(batchUpdates.slice(k, k + MAX_SHEETS_REQUESTS));
+        }
+
+        for (let sb = 0; sb < subBatches.length; sb++) {
+          const subBatch = subBatches[sb];
+
+          try {
+            await sheet.updateFieldsGooglePack(subBatch);
+          } catch (error) {
+            console.error(`❌ Ошибка Google Sheets:`, error);
+
+            if (
+              error instanceof Error &&
+              error.message.includes('Quota exceeded')
+            ) {
+              console.log(
+                `⏳ Превышена квота Google Sheets. Ждем 30 секунд...`,
+              );
+              await new Promise((resolve) => setTimeout(resolve, 30000));
+
+              // Пробуем еще раз
+              try {
+                await sheet.updateFieldsGooglePack(subBatch);
+              } catch (retryError) {
+                console.error(`❌ Повторная ошибка:`, retryError);
+              }
+            }
+          }
+
+          // Задержка между подпакетами Google Sheets
+          if (sb < subBatches.length - 1) {
+            await new Promise((resolve) => setTimeout(resolve, 1000));
           }
         }
       }
 
-      // Пакетное обновление
-      if (sheetUpdates.length > 0) {
-        await new TimeSheetService().updateFieldsGooglePack(sheetUpdates);
-        sheetUpdates.length = 0;
+      // СТАТИСТИКА И ЗАДЕРЖКА МЕЖДУ ПАКЕТАМИ
+      const batchTime = Date.now() - batchStartTime;
+      const estimatedRemaining =
+        ((totalBatches - batchNumber) * (batchTime + DELAY_BETWEEN_BATCHES)) /
+        1000 /
+        60;
+
+      console.log(
+        `⏱️  Пакет обработан за ${(batchTime / 1000).toFixed(1)} сек`,
+      );
+      console.log(
+        `📊 Прогресс: ${processedCount} обработано, ${skippedCount} пропущено`,
+      );
+      console.log(`⏳ Осталось примерно: ${estimatedRemaining.toFixed(1)} мин`);
+
+      // ЗАДЕРЖКА МЕЖДУ ПАКЕТАМИ
+      if (batchNumber < totalBatches) {
+        console.log(`⏳ Задержка ${DELAY_BETWEEN_BATCHES / 1000} сек.`);
+        await new Promise((resolve) =>
+          setTimeout(resolve, DELAY_BETWEEN_BATCHES),
+        );
       }
     }
 
-    // await Promise.all(amoUpdatesPromises);
+    const totalTime = (Date.now() - startTime) / 1000 / 60;
+    console.log(`\n✅ ОБРАБОТКА ЗАВЕРШЕНА ЗА ${totalTime.toFixed(1)} МИНУТ!`);
+    console.log(
+      `📊 Итоги: ${processedCount} обработано, ${skippedCount} пропущено`,
+    );
   } catch (err) {
-    if (err instanceof Error) {
-      console.error(`Глобальная ошибка: ${err.message}`);
-    }
+    console.error('❌ Глобальная ошибка:', err);
+    throw err;
   }
 };
 
 // Обновить все поля
 export const updateAllFiled = async (isAllField = false) => {
   try {
-    const rowLength =
-      (await new TimeSheetService().getColumnData()).flat().length + 1;
-    const startRange = new TimeSheetService().startRangeWith(
-      isAllField,
-      rowLength,
-    );
-    const allData = await new TimeSheetService().getRangeValues();
+    const sheet = new TimeSheetService();
+    const rowLength = (await sheet.getColumnData()).flat().length + 1;
+    const startRange = sheet.startRangeWith(isAllField, rowLength);
+    const allData = await sheet.getRangeValues();
     const amo = new AmoAPI();
     // Инициализируем кэш пользователей
     await amo.initUsersCache();
@@ -455,7 +515,7 @@ export const updateAllFiled = async (isAllField = false) => {
       values: (string | number)[][];
     }[] = [];
 
-    const pipelinesResponse = await new AmoAPI().getAllPipelines();
+    const pipelinesResponse = await amo.getAllPipelines();
     const pipelines = pipelinesResponse;
     const pipelinesMap = pipelines.reduce(
       (
@@ -512,7 +572,7 @@ export const updateAllFiled = async (isAllField = false) => {
             continue;
           }
 
-          const lead = await new AmoAPI().getLeadById(idLead);
+          const lead = await amo.getLeadById(idLead);
 
           // Обрабатываем случай когда сделка не найдена (204 No Content)
           if (!lead) {
@@ -529,28 +589,31 @@ export const updateAllFiled = async (isAllField = false) => {
           }
 
           const {
+            totalTimeLead,
+            formattedUpdatedAt,
+            reasonForRefusal,
+            leadStatusNewRequest,
+            leadStatusInProgress,
             statusName,
             pipelineName,
-            createdAtFormatted,
-            omTakenAt,
-            diffCreatedToTaken,
-            omTakenBy,
-            omAssignedAt,
-            diffAssignedToTaken,
-            omAssignedBy,
-            omTakeIng,
-            diffTakenToTakeIng,
-            omTakenByIng,
-            omRaspredByIngTime,
-            diffIngRukManeger,
-            omRaspredByIng,
-            reasonForRefusal,
-            formattedUpdatedAt,
-            totalTimeLead,
+            deltaMain,
+            leader,
+            serial,
+            engine,
             nameIndustry,
             nameProduct,
-            dateFormatted,
-          } = getParamsLead({ lead, pipelinesMap });
+            currentResponsible,
+          } = await getParamsLead({ lead, pipelinesMap, amo });
+
+          const [Y, MONTH, D, H, MIN] = getDate(leadStatusNewRequest || 0);
+          let outputDateInProgress = '';
+          if (leadStatusInProgress) {
+            const [y, mon, d, h, min] = getDate(
+              leadStatusInProgress.created_at || 0,
+            );
+
+            outputDateInProgress = `${y}.${mon}.${d} ${h}:${min}`;
+          }
 
           // Добавляем обновления
           sheetUpdates.push({
@@ -559,19 +622,19 @@ export const updateAllFiled = async (isAllField = false) => {
               [
                 statusName,
                 pipelineName,
-                createdAtFormatted,
-                omTakenAt,
-                diffCreatedToTaken,
-                omTakenBy,
-                omAssignedAt,
-                diffAssignedToTaken,
-                omAssignedBy,
-                omTakeIng,
-                diffTakenToTakeIng,
-                omTakenByIng,
-                omRaspredByIngTime,
-                diffIngRukManeger,
-                omRaspredByIng,
+                `${Y}.${MONTH}.${D} ${H}:${MIN}`,
+                outputDateInProgress,
+                deltaMain,
+                leader,
+                serial.createAt,
+                serial.delta,
+                serial.responsible || '',
+                engine.createAt,
+                engine.delta,
+                engine.responsible || '',
+                '',
+                '',
+                '',
               ],
             ],
           });
@@ -615,17 +678,21 @@ export const updateAllFiled = async (isAllField = false) => {
             ],
           });
 
-          const { day, month, year } = dateFormatted;
+          const [year, month, day] = getDate(lead.created_at);
           sheetUpdates.push({
             range: `AH${rowNumber}:AJ${rowNumber}`,
-            values: [[day, month, year]],
+            values: [[day, month, year.slice(2)]],
           });
 
           let techManager = '';
-          if (!omRaspredByIng && !omAssignedBy && !omTakenBy) {
+          if (
+            !serial.responsible &&
+            !engine.responsible &&
+            leader === 'Юлия Бабанина'
+          ) {
             techManager = 'Не Квал';
           } else {
-            const user = await amo.getUser(lead.responsible_user_id);
+            const user = currentResponsible;
             if (user) {
               techManager = user.name;
             }
@@ -660,7 +727,7 @@ export const updateAllFiled = async (isAllField = false) => {
       // Пакетное обновление
       if (sheetUpdates.length > 0) {
         try {
-          await new TimeSheetService().updateFieldsGooglePack(sheetUpdates);
+          await sheet.updateFieldsGooglePack(sheetUpdates);
           sheetUpdates.length = 0;
         } catch (updateError) {
           console.error('Ошибка при обновлении Google Sheets:', updateError);

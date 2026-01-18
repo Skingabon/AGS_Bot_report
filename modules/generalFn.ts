@@ -17,6 +17,7 @@ import {
   createReportControlByPeriod,
   updateReportControlDaily,
 } from './controlReport';
+import { AmoAPI } from '../services/apiAmo';
 
 export let botContext: Context | null = null;
 
@@ -186,8 +187,22 @@ export const onChangeDatePeriod = async (ctx: Context) => {
   const state = calendarStates[userId];
 
   if (!state) {
-    await ctx.answerCallbackQuery('❌ Сессия устарела');
+    try {
+      await ctx.answerCallbackQuery('❌ Сессия устарела');
+    } catch (e) {
+      if (e instanceof Error) {
+        console.log(e);
+      }
+    }
     return;
+  }
+
+  try {
+    await ctx.answerCallbackQuery({ text: '✅ Дата выбрана' });
+  } catch (e) {
+    if (e instanceof Error) {
+      console.log(e);
+    }
   }
 
   if (state.type === 'awaiting_start') {
@@ -244,15 +259,17 @@ export const onChangeDatePeriod = async (ctx: Context) => {
         `📅 По: ${endDate}\n\n` +
         `⏳ Формирую отчет...`,
     );
+    setTimeout(async () => {
+      // Вызываем вашу функцию
+      await ctx.reply('Начинаю создавать таблицу со всеми статическими полям');
+      await createReportTimeByPeriod(state.startDate, endDate);
+      await ctx.reply('Обновляю динамические поля');
+      await updateAllFiled();
+      await ctx.reply('Обрабатываю исходящие звонки');
+      await updateIncomingCall();
+      await ctx.reply('Все готово!');
+    }, 0);
 
-    // Вызываем вашу функцию
-    await ctx.reply('Начинаю создавать таблицу со всеми статическими полям');
-    await createReportTimeByPeriod(state.startDate, endDate);
-    await ctx.reply('Обновляю динамические поля');
-    await updateAllFiled();
-    await ctx.reply('Обрабатываю исходящие звонки');
-    await updateIncomingCall();
-    await ctx.reply('Все готово!');
     delete calendarStates[userId];
   } else if (state.type === 'awaiting_start_date_report_control') {
     state.startDate = selectedDate;
@@ -281,14 +298,16 @@ export const onChangeDatePeriod = async (ctx: Context) => {
         `⏳ Формирую отчет...`,
     );
 
-    // Вызываем вашу функцию
-    await ctx.reply('Начинаю работать с таблицей Control');
-    await createReportControlByPeriod(state.startDate, endDate);
-    await ctx.reply('Обновляю поля Control');
-    await updateReportControlDaily();
-    await ctx.reply('Сортирую по дате');
-    await new ControlSheetService().sortSheetByDate();
-    await ctx.reply('Все готово!');
+    setTimeout(async () => {
+      await ctx.reply('Начинаю работать с таблицей Control');
+      await createReportControlByPeriod(state.startDate, endDate);
+      await ctx.reply('Обновляю поля Control');
+      await updateReportControlDaily();
+      await ctx.reply('Сортирую по дате');
+      await new ControlSheetService().sortSheetByDate();
+      await ctx.reply('Все готово!');
+    }, 0);
+
     delete calendarStates[userId];
   } else if (state.type === 'awaiting_start_date_marketing') {
     state.startDate = selectedDate;

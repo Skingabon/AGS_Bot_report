@@ -1,9 +1,13 @@
 import { Context } from 'grammy';
-import { convertDateFormat, getPeriodTimestamps } from '../util/helper';
+import {
+  convertDateFormat,
+  getFieldValue,
+  getPeriodTimestamps,
+} from '../util/helper';
 import { TimeSheetService } from '../services/apiGoogleTable';
 import { AmoAPI } from '../services/apiAmo';
 import { DOMAIN } from './contants';
-import { getLeadsTodayOrByPeriod, getParamsLead } from './utils';
+import { getLeadsTodayOrByPeriod } from './utils';
 
 export const showReportLeadByPeriod = async (
   ctx: Context,
@@ -175,75 +179,73 @@ export const createReportTimeByPeriod = async (
   endDate?: string,
 ) => {
   try {
-    const { leads, pipelinesMap } = await getLeadsTodayOrByPeriod(
-      startDate,
-      endDate,
-    );
+    const { leads } = await getLeadsTodayOrByPeriod(startDate, endDate);
 
     // Преобразование данных для загрузки в Google Sheets
-    const googleSheetsData = leads.map((lead) => {
-      const {
-        newLeadSourse,
-        statusName,
-        pipelineName,
-        createdAtFormatted,
-        omTakenAt,
-        diffCreatedToTaken,
-        omTakenBy,
-        omAssignedAt,
-        diffAssignedToTaken,
-        omAssignedBy,
-        omTakeIng,
-        diffTakenToTakeIng,
-        omTakenByIng,
-        omRaspredByIngTime,
-        diffIngRukManeger,
-        omRaspredByIng,
-        formattedUpdatedAt,
-        reasonForRefusal,
-      } = getParamsLead({ lead, pipelinesMap });
+    const googleSheetsData: (string | number)[][] = [];
+    for (let i = 0; i <= leads.length; i++) {
+      const lead = leads[i];
+      try {
+        const fields = lead.custom_fields_values || [];
+        const newLeadSource = getFieldValue(fields, 'Источник лида') || '';
 
-      // leads.sort((a, b) => a.created_at - b.created_at);
-
-      return [
-        lead.id, // 1 A ID
-        lead.name, // 2 B
-        `https://${DOMAIN}.amocrm.ru/leads/detail/${lead.id}`, // 3 C Ссылка на лид
-        newLeadSourse, // 4 D Источник сделки
-        statusName, // 5 E Название статуса
-        pipelineName, // 6 F Название воронки
-        createdAtFormatted, // 7 G Создан
-        omTakenAt, // 8 H ДатаВремя "ОМ Взято в работу"
-        diffCreatedToTaken, // 9 I Дельта Взято в работу - Создание ВРЕМЯ
-        omTakenBy, // 10 J Рук отдела Менеджер "ОМ Взято в работу"
-        omAssignedAt, //11 K На серию. ДатаВремя "Время ОМ квал серия"
-        diffAssignedToTaken, // 12 L Дельта На серию - Взято в работу  ВРЕМЯ
-        omAssignedBy, // 13 M Менеджер Серии "ОМ Квал серия"
-        omTakeIng, // 14 N Распределен на инжиниринг
-        diffTakenToTakeIng, //15 O На инж - Взято в работу
-        omTakenByIng, // 16 Р Кто распределил наинжиниринг "ОМ Квал ИНЖ"
-        omRaspredByIngTime, // 17 Q Время распределения на менеджера инжиниринга "Время Распр ОМ квал ИНЖ"
-        diffIngRukManeger, // 18 R  Дельта распредления Кто распределил на менеджера
-        omRaspredByIng, // 14 S Менеджер отдела инжиниринга. Распределен на менеджера "Распр ОМ квал ИНЖ"
-        '-', // Первое касание
-        // dateIncomingCallArr[index], // 16 T Первое касание. Реакция менеджера на лид Первое касание
-        '-', //deltaTimeFirstResponse
-        // deltaTimeFirstResponse, // 17 U Дельта от распределения на серию или инжтиниринг до первого касания менеджера - звонок или письмо или отввет в мессенджере.
-        '-', // timeAllWork
-        // timeAllWork, // 18 V  Общее время сделки в работе от даты/время создания до даты последнего действия W
-        formattedUpdatedAt, // 19 W Дата/время последнего обновления в сделке
-        // lead.price,
-        // lead.status_id, // ID статуса
-        // statusName, // Название статуса
-        // pipelineName, // Название воронки
-        // lead.id, // ID
-        // newLeadAdmin, // ответственный в сделке
-        // newLeadTime, // Время сделка Создана на этапе Новая заявка
-        // new Date(lead.updated_at * 1000).toLocaleString(),
-        reasonForRefusal, // причина отказа
-        lead.price, // бюджет
-      ];
-    });
+        googleSheetsData.push([
+          lead.id, // 1 A ID
+          lead.name, // 2 B
+          `https://${DOMAIN}.amocrm.ru/leads/detail/${lead.id}`, // 3 C Ссылка на лид
+          newLeadSource, // 4 D Источник сделки
+          '', // 5 E Название статуса
+          '', // 6 F Название воронки
+          ``, // 7 G Создан
+          '', // 8 H ДатаВремя "ОМ Взято в работу"
+          '', // 9 I Дельта Взято в работу - Создание ВРЕМЯ
+          '', // 10 J Рук отдела Менеджер "ОМ Взято в работу"
+          '', //11 K На серию. ДатаВремя "Время ОМ квал серия"
+          '', // 12 L Дельта На серию - Взято в работу  ВРЕМЯ
+          '', // 13 M Менеджер Серии "ОМ Квал серия"
+          '', // 14 N Распределен на инжиниринг
+          '', //15 O На инж - Взято в работу
+          '', // 16 Р Кто распределил наинжиниринг "ОМ Квал ИНЖ"
+          '', // 17 Q Время распределения на менеджера инжиниринга "Время Распр ОМ квал ИНЖ"
+          '', // 18 R  Дельта распредления Кто распределил на менеджера
+          '', // 14 S Менеджер отдела инжиниринга. Распределен на менеджера "Распр ОМ квал ИНЖ"
+          '', // Первое касание
+          // dateIncomingCallArr[index], // 16 T Первое касание. Реакция менеджера на лид Первое касание
+          '', //deltaTimeFirstResponse
+          // deltaTimeFirstResponse, // 17 U Дельта от распределения на серию или инжтиниринг до первого касания менеджера - звонок или письмо или отввет в мессенджере.
+          '', // timeAllWork
+          // timeAllWork, // 18 V  Общее время сделки в работе от даты/время создания до даты последнего действия W
+          '', // 19 W Дата/время последнего обновления в сделке
+          '', // причина отказа
+          '', // бюджет
+          '', // Z
+          '', //AA
+          '', //AB
+          '', //AC
+          '', //AD
+          '', //AE
+          '', //AF
+          '', //AG
+          '', //AH
+          '', //AI
+          '', //AJ
+          '', //AK
+          '', //AL
+          '', //AM
+          '', //AN
+          '', //AO
+          '', //AP
+          '', //AQ
+          '', //AR
+          '', //AS
+          lead.created_at, //AT
+        ]);
+      } catch (e) {
+        if (e instanceof Error) {
+          console.log(e);
+        }
+      }
+    }
 
     const resource = {
       values: googleSheetsData,
@@ -251,7 +253,7 @@ export const createReportTimeByPeriod = async (
     await new TimeSheetService().createGoogleFields(resource);
   } catch (error) {
     if (error instanceof Error) {
-      console.log('error' + error.message);
+      console.log('error ' + error.message);
     }
   }
 };

@@ -15,7 +15,7 @@ import {
 import { getStatusLead } from './statusList';
 import { ReportRowFactory } from './table/tableFabricControl';
 
-const lastColumnName = 'AE';
+// const lastColumnName = 'AE';
 
 // Функция создания базовых строк
 export const createReportControlByPeriod = async (
@@ -78,6 +78,7 @@ export const createReportControlByPeriod = async (
             year,
             status: statusLead,
             pipeline: leadPipeline,
+            createAt: lead.created_at,
           });
 
           return row;
