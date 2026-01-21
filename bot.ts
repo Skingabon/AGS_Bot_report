@@ -55,10 +55,10 @@ bot.callbackQuery('test', async (ctx) => {
   await ctx.reply('Начало');
   // await createReportTimeByPeriod('01.12.2025', '02.12.2025');
   // await ctx.reply('Обновление полей');
-  // await updateAllFiled(true);
+  await updateAllFiled();
   // await ctx.reply('Звонки');
   // await updateIncomingCall(true);
-  await new ControlSheetService().sortSheetByDate();
+  // await new ControlSheetService().sortSheetByDate();
   // await new TimeSheetService().sortSheetByDate();
   await ctx.reply('Конец');
 });
@@ -95,9 +95,9 @@ cron.schedule('40 23 * * *', async () => {
   const today = formatDateMMDDYYYYByDate(new Date());
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
+  const timeSheet = new TimeSheetService();
 
-  const lastRowBeforeFill =
-    await new TimeSheetService().getLastRowGoogleSheet();
+  const lastRowBeforeFill = await timeSheet.getLastRowGoogleSheet();
 
   if (!fs.existsSync(logDir)) {
     fs.mkdirSync(logDir, { recursive: true });
@@ -110,6 +110,7 @@ cron.schedule('40 23 * * *', async () => {
     await createReportTimeByPeriod();
     await updateAllFiled();
     await updateIncomingCall();
+    await timeSheet.sortSheetByDate();
   } catch (error) {
     if (error instanceof Error) {
       errorMsg = error.message;

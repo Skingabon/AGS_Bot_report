@@ -4,10 +4,7 @@ import {
   formatSecondsToHHMM,
   getDate,
 } from '../util/helper';
-import {
-  ControlSheetService,
-  TimeSheetService,
-} from '../services/apiGoogleTable';
+import { TimeSheetService } from '../services/apiGoogleTable';
 import { AmoAPI } from '../services/apiAmo';
 import { getDataStatusLead, getParamsLead } from './utils';
 
@@ -222,9 +219,8 @@ export const updateIncomingCall = async (isAllField = false): Promise<void> => {
     const sheet = new TimeSheetService();
 
     // Получаем данные из таблицы
-    const rowLength = (await sheet.getColumnData()).flat().length + 1;
-    const startRange = sheet.startRangeWith(isAllField, rowLength);
-    const allData = await sheet.getRangeValues();
+    const { data: allData, startRow } =
+      await sheet.getDataWithRowNumbers(isAllField);
 
     console.log(`📊 Всего строк для обработки: ${allData.length}`);
 
@@ -282,7 +278,7 @@ export const updateIncomingCall = async (isAllField = false): Promise<void> => {
       for (let j = 0; j < batch.length; j++) {
         const row = batch[j];
         const globalIndex = i + j;
-        const rowNumber = globalIndex + startRange;
+        const rowNumber = globalIndex + startRow;
 
         const idLeadFromTable = row[0] || '';
         const stageLead = row[4];
@@ -502,10 +498,10 @@ export const updateIncomingCall = async (isAllField = false): Promise<void> => {
 export const updateAllFiled = async (isAllField = false) => {
   try {
     const sheet = new TimeSheetService();
-    const rowLength = (await sheet.getColumnData()).flat().length + 1;
-    const startRange = sheet.startRangeWith(isAllField, rowLength);
-    const allData = await sheet.getRangeValues();
     const amo = new AmoAPI();
+
+    const { data: allData, startRow } =
+      await sheet.getDataWithRowNumbers(isAllField);
     // Инициализируем кэш пользователей
     await amo.initUsersCache();
 
@@ -539,18 +535,18 @@ export const updateAllFiled = async (isAllField = false) => {
       for (let j = 0; j < batch.length; j++) {
         const row = batch[j];
         const globalIndex = i + j;
-        const rowNumber = globalIndex + startRange;
+        const rowNumber = globalIndex + startRow;
         const idLeadFromTable = row[0] || ''; // A
-
+        console.log('Обработка id lead: ' + idLeadFromTable);
         try {
           if (!idLeadFromTable) {
             sheetUpdates.push({
               range: `E${rowNumber}:S${rowNumber}`,
-              values: [Array(15).fill('Пустой ID')],
+              values: [Array(15).fill('')],
             });
             sheetUpdates.push({
               range: `W${rowNumber}:AB${rowNumber}`,
-              values: [Array(6).fill('Пустой ID')],
+              values: [Array(6).fill('')],
             });
             errorCount++;
             continue;
@@ -562,11 +558,11 @@ export const updateAllFiled = async (isAllField = false) => {
           if (isNaN(idLead) || idLead === 0) {
             sheetUpdates.push({
               range: `E${rowNumber}:S${rowNumber}`,
-              values: [Array(15).fill('Неверный ID')],
+              values: [Array(15).fill('')],
             });
             sheetUpdates.push({
               range: `W${rowNumber}:AB${rowNumber}`,
-              values: [Array(6).fill('Неверный ID')],
+              values: [Array(6).fill('')],
             });
             errorCount++;
             continue;
@@ -578,11 +574,11 @@ export const updateAllFiled = async (isAllField = false) => {
           if (!lead) {
             sheetUpdates.push({
               range: `E${rowNumber}:S${rowNumber}`,
-              values: [Array(15).fill('Сделка не найдена')],
+              values: [Array(15).fill('')],
             });
             sheetUpdates.push({
               range: `W${rowNumber}:AB${rowNumber}`,
-              values: [Array(6).fill('Сделка не найдена')],
+              values: [Array(6).fill('')],
             });
             notFoundCount++;
             continue;
@@ -688,7 +684,8 @@ export const updateAllFiled = async (isAllField = false) => {
           if (
             !serial.responsible &&
             !engine.responsible &&
-            leader === 'Юлия Бабанина'
+            currentResponsible &&
+            currentResponsible.id === 9380670
           ) {
             techManager = 'Не Квал';
           } else {
@@ -714,11 +711,11 @@ export const updateAllFiled = async (isAllField = false) => {
             // Записываем ошибку в таблицу
             sheetUpdates.push({
               range: `E${rowNumber}:S${rowNumber}`,
-              values: [Array(15).fill('Ошибка обработки')],
+              values: [Array(15).fill('')],
             });
             sheetUpdates.push({
               range: `W${rowNumber}:AB${rowNumber}`,
-              values: [Array(6).fill('Ошибка обработки')],
+              values: [Array(6).fill('')],
             });
           }
         }

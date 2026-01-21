@@ -1,8 +1,6 @@
 import 'dotenv/config';
 import { google, GoogleApis } from 'googleapis';
-import { parseDateTime } from '../util/helper';
 import { GoogleAuth } from 'google-auth-library';
-import { LeadStatusChangedEvent } from '../interfaces';
 
 // Базовый класс для работы с Google Sheets
 export class GoogleSheetService {
@@ -74,31 +72,31 @@ export class GoogleSheetService {
   }
 
   // Получаю все поля из таблицы
-  async getRangeValues(
-    startRange = this.startRangeColumn,
-    endRange = this.endRangeColumn,
-  ): Promise<Array<string[]>> {
-    const sheets = this.google.sheets({ version: 'v4', auth: this.auth });
-
-    try {
-      const response = await sheets.spreadsheets.values.get({
-        spreadsheetId: this.SPREADSHEET_ID,
-        range: `${this.sheetName}!${startRange}:${endRange}`,
-        valueRenderOption: 'FORMATTED_VALUE',
-      });
-
-      return response.data.values || [];
-    } catch (error) {
-      console.error(
-        `Ошибка получения диапазона ${startRange}:${endRange}`,
-        error,
-      );
-      return [];
-    }
-  }
+  // async getRangeValues(
+  //   startRange = this.startRangeColumn,
+  //   endRange = this.endRangeColumn,
+  // ): Promise<Array<string[]>> {
+  //   const sheets = this.google.sheets({ version: 'v4', auth: this.auth });
+  //
+  //   try {
+  //     const response = await sheets.spreadsheets.values.get({
+  //       spreadsheetId: this.SPREADSHEET_ID,
+  //       range: `${this.sheetName}!${startRange}:${endRange}`,
+  //       valueRenderOption: 'FORMATTED_VALUE',
+  //     });
+  //
+  //     return response.data.values || [];
+  //   } catch (error) {
+  //     console.error(
+  //       `Ошибка получения диапазона ${startRange}:${endRange}`,
+  //       error,
+  //     );
+  //     return [];
+  //   }
+  // }
 
   // Получаю все поля из таблицы
-  async getRangeValuesNew(
+  async getRangeValues(
     startRange = this.startRangeColumn,
     endRange = this.endRangeColumn,
     isAllField: boolean = false, // Добавляем параметр
@@ -182,55 +180,8 @@ export class GoogleSheetService {
       });
     }
   }
+
   async sortSheetByDate(isAllField: boolean = false): Promise<void> {
-    const sheets = this.google.sheets({ version: 'v4', auth: this.auth });
-
-    try {
-      const rowLength = (await this.getColumnData()).flat().length + 1;
-      const startRange = this.startRangeWith(isAllField, rowLength);
-
-      const response = await sheets.spreadsheets.values.get({
-        spreadsheetId: this.SPREADSHEET_ID,
-        range: `${this.sheetName}!A${startRange}:${this.endRangeColumn}`,
-      });
-
-      const data: any[][] = response.data.values || [];
-      if (data.length === 0) {
-        console.log('Нет данных для сортировки');
-        return;
-      }
-
-      const dataWithDebug = data.map((row, index) => {
-        const timestamp = Number(row[this.columnIndexForSorting]);
-
-        return {
-          originalIndex: index,
-          row: row,
-          timestamp,
-        };
-      });
-
-      const sortedWithDebug = dataWithDebug.sort(
-        (a, b) => a.timestamp - b.timestamp,
-      );
-
-      const sortedData = sortedWithDebug.map((item) => item.row);
-
-      await sheets.spreadsheets.values.update({
-        spreadsheetId: this.SPREADSHEET_ID,
-        range: `${this.sheetName}!A${startRange}:${this.endRangeColumn}`,
-        valueInputOption: 'RAW',
-        requestBody: {
-          values: sortedData,
-        },
-      });
-    } catch (error) {
-      console.error('Ошибка сортировки:', error);
-      throw error;
-    }
-  }
-
-  async sortSheetByDateNew(isAllField: boolean = false): Promise<void> {
     const sheets = this.google.sheets({ version: 'v4', auth: this.auth });
 
     try {
@@ -283,21 +234,34 @@ export class GoogleSheetService {
       throw error;
     }
   }
-}
+  async getDataWithRowNumbers(isAllField: boolean = false): Promise<{
+    data: any[][];
+    startRow: number;
+  }> {
+    const rowLength = (await this.getColumnData()).flat().length + 1;
+    const startRow = this.startRangeWith(isAllField, rowLength);
+    const data = await this.getRangeValues(
+      this.startRangeColumn,
+      this.endRangeColumn,
+      isAllField,
+    );
 
-// Специализированный класс для листа Time с дополнительной логикой
-export class TimeSheetService extends GoogleSheetService {
-  constructor() {
-    super('Time', 1700, 45, 'AT');
-  }
-}
+    // ОТЛАДКА
+    // ДОБАВЬТЕ ПРОВЕРКУ
+    console.log(`🔍 ${this.sheetName}: getDataWithRowNumbers ПРОВЕРКА:`);
+    console.log(`   Передан startRange: ${this.startRangeColumn}`);
+    console.log(`   Передан endRange: ${this.endRangeColumn}`);
+    console.log(`   Получено данных: ${data.length}`);
+    console.log(`   startRow: ${startRow}`);
 
-// Специализированный класс для листа Control
-export class ControlSheetService extends GoogleSheetService {
-  protected readonly maxColumnName: string = 'AF';
-  constructor() {
-    // TODO: countQuartetRow еще не работает для Control
-    super('Control', 3500, 31, 'AF');
+    // Проверим что данные действительно ограничены
+    if (!isAllField && data.length > this.countQuartetRow) {
+      console.warn(
+        `⚠️  ВНИМАНИЕ: Получено ${data.length} строк при countQuartetRow=${this.countQuartetRow}`,
+      );
+    }
+
+    return { data, startRow };
   }
 
   // Получаем последнюю заполненную строку
@@ -320,12 +284,12 @@ export class ControlSheetService extends GoogleSheetService {
 
       // Получаем последнюю строку
       const lastRow = await this.getLastRow();
-      const startRow = lastRow + 1;
+      const startRow = lastRow;
       const endRow = startRow + data.values.length - 1;
 
       await this.updateFieldsGooglePack([
         {
-          range: `A${startRow}:${this.maxColumnName}${endRow}`,
+          range: `A${startRow}:${this.endRangeColumn}${endRow}`,
           values: data.values,
         },
       ]);
@@ -368,7 +332,7 @@ export class ControlSheetService extends GoogleSheetService {
 
       await sheets.spreadsheets.values.append({
         spreadsheetId: this.SPREADSHEET_ID,
-        range: `${this.sheetName}!A:${this.maxColumnName}`,
+        range: `${this.sheetName}!A:${this.endRangeColumn}`,
         valueInputOption: 'USER_ENTERED',
         insertDataOption: 'INSERT_ROWS',
         requestBody: {
@@ -381,6 +345,77 @@ export class ControlSheetService extends GoogleSheetService {
       console.error('❌ Ошибка добавления строк:', error);
       throw error;
     }
+  }
+  // Получение строк с фильтрацией по leadId
+  async expandSheet(additionalRows: number = 500): Promise<void> {
+    try {
+      const sheets = this.google.sheets({ version: 'v4', auth: this.auth });
+
+      // Получаем ID листа
+      const spreadsheet = await sheets.spreadsheets.get({
+        spreadsheetId: this.SPREADSHEET_ID,
+      });
+
+      const sheet = spreadsheet.data.sheets?.find(
+        (s) => s.properties?.title === this.sheetName,
+      );
+
+      const sheetId = sheet?.properties?.sheetId;
+      if (!sheetId) {
+        throw new Error('Не удалось найти ID листа');
+      }
+
+      // Получаем текущие размеры
+      const currentRowCount =
+        sheet?.properties?.gridProperties?.rowCount || 1000;
+      const currentColCount =
+        sheet?.properties?.gridProperties?.columnCount || 26;
+
+      const newRowCount = currentRowCount + additionalRows;
+
+      console.log(
+        `📏 Расширение таблицы: ${currentRowCount} → ${newRowCount} строк`,
+      );
+
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: this.SPREADSHEET_ID,
+        requestBody: {
+          requests: [
+            {
+              updateSheetProperties: {
+                properties: {
+                  sheetId: sheetId,
+                  gridProperties: {
+                    rowCount: newRowCount,
+                    columnCount: Math.max(currentColCount, 41), // A:AE
+                  },
+                },
+                fields: 'gridProperties.rowCount,gridProperties.columnCount',
+              },
+            },
+          ],
+        },
+      });
+
+      console.log(`✅ Таблица расширена до ${newRowCount} строк`);
+    } catch (error) {
+      console.error('❌ Ошибка расширения таблицы:', error);
+      throw error;
+    }
+  }
+}
+
+// Специализированный класс для листа Time с дополнительной логикой
+export class TimeSheetService extends GoogleSheetService {
+  constructor() {
+    super('Time', 1700, 45, 'AT');
+  }
+}
+
+// Специализированный класс для листа Control
+export class ControlSheetService extends GoogleSheetService {
+  constructor() {
+    super('Control', 3500, 31, 'AF');
   }
 
   // Пакетное обновление ячеек
@@ -492,64 +527,6 @@ export class ControlSheetService extends GoogleSheetService {
           setTimeout(resolve, delayBetweenBatches),
         );
       }
-    }
-  }
-
-  // Получение строк с фильтрацией по leadId
-  async expandSheet(additionalRows: number = 500): Promise<void> {
-    try {
-      const sheets = this.google.sheets({ version: 'v4', auth: this.auth });
-
-      // Получаем ID листа
-      const spreadsheet = await sheets.spreadsheets.get({
-        spreadsheetId: this.SPREADSHEET_ID,
-      });
-
-      const sheet = spreadsheet.data.sheets?.find(
-        (s) => s.properties?.title === this.sheetName,
-      );
-
-      const sheetId = sheet?.properties?.sheetId;
-      if (!sheetId) {
-        throw new Error('Не удалось найти ID листа');
-      }
-
-      // Получаем текущие размеры
-      const currentRowCount =
-        sheet?.properties?.gridProperties?.rowCount || 1000;
-      const currentColCount =
-        sheet?.properties?.gridProperties?.columnCount || 26;
-
-      const newRowCount = currentRowCount + additionalRows;
-
-      console.log(
-        `📏 Расширение таблицы: ${currentRowCount} → ${newRowCount} строк`,
-      );
-
-      await sheets.spreadsheets.batchUpdate({
-        spreadsheetId: this.SPREADSHEET_ID,
-        requestBody: {
-          requests: [
-            {
-              updateSheetProperties: {
-                properties: {
-                  sheetId: sheetId,
-                  gridProperties: {
-                    rowCount: newRowCount,
-                    columnCount: Math.max(currentColCount, 31), // A:AE
-                  },
-                },
-                fields: 'gridProperties.rowCount,gridProperties.columnCount',
-              },
-            },
-          ],
-        },
-      });
-
-      console.log(`✅ Таблица расширена до ${newRowCount} строк`);
-    } catch (error) {
-      console.error('❌ Ошибка расширения таблицы:', error);
-      throw error;
     }
   }
 }

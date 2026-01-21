@@ -21,6 +21,7 @@ import { ReportRowFactory } from './table/tableFabricControl';
 export const createReportControlByPeriod = async (
   startDate?: string,
   endDate?: string,
+  isAllField: boolean = false,
 ) => {
   try {
     const sheetService = new ControlSheetService();
@@ -36,7 +37,8 @@ export const createReportControlByPeriod = async (
     console.log(`📊 Найдено ${leads.length} сделок за период`);
 
     // Получаем существующие ID сделок
-    const allRows = await sheetService.getRangeValues();
+    const { data: allRows } =
+      await sheetService.getDataWithRowNumbers(isAllField);
     const existingLeadIds = new Set<number>();
     for (const row of allRows) {
       const leadId = Number(row[0]);
@@ -157,7 +159,9 @@ export const createReportControlByPeriod = async (
 };
 
 // Функция обновления полей
-export const updateReportControlDaily = async (): Promise<void> => {
+export const updateReportControlDaily = async (
+  isAllField: boolean = false,
+): Promise<void> => {
   try {
     const sheetService = new ControlSheetService();
     const amo = new AmoAPI();
@@ -178,7 +182,8 @@ export const updateReportControlDaily = async (): Promise<void> => {
     await amo.initUsersCache();
 
     // Получаем все строки таблицы
-    const allRows = await sheetService.getRangeValues();
+    const { data: allRows, startRow } =
+      await sheetService.getDataWithRowNumbers(isAllField);
     console.log(`📊 Найдено ${allRows.length} строк в таблице`);
 
     // ГРУППИРУЕМ строки по ID сделки
@@ -197,7 +202,7 @@ export const updateReportControlDaily = async (): Promise<void> => {
     // ЗАПОЛНЯЕМ leadsMap ДАННЫМИ ИЗ allRows
     for (let i = 0; i < allRows.length; i++) {
       const row = allRows[i];
-      const rowNumber = i + 2;
+      const rowNumber = i + startRow;
       const leadId = Number(row[0]);
 
       if (!leadId || isNaN(leadId)) {

@@ -250,7 +250,10 @@ export const createReportTimeByPeriod = async (
     const resource = {
       values: googleSheetsData,
     };
-    await new TimeSheetService().createGoogleFields(resource);
+    console.log(googleSheetsData);
+    // await new TimeSheetService().createGoogleFields(resource);
+    const sheetService = new TimeSheetService();
+    await sheetService.createGoogleFieldsBatch(resource);
   } catch (error) {
     if (error instanceof Error) {
       console.log('error ' + error.message);

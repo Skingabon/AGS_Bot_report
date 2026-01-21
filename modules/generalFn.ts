@@ -17,8 +17,6 @@ import {
   createReportControlByPeriod,
   updateReportControlDaily,
 } from './controlReport';
-import { AmoAPI } from '../services/apiAmo';
-
 export let botContext: Context | null = null;
 
 const calendarReport = async (
