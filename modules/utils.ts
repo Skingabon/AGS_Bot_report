@@ -145,12 +145,14 @@ type returnTypeParamsLead = {
   nameProduct: string;
   dateFormatted: returnTypeParseDate;
   currentResponsible: IUser | null;
+  leadLastClosed: LeadStatusChangedEvent | undefined;
 };
 
 type getDataStatusLeadReturn = {
   findLeadInProgress: LeadStatusChangedEvent | undefined;
   leadStatusSerial: LeadStatusChangedEvent | undefined;
   leadStatusEngine: LeadStatusChangedEvent | undefined;
+  leadLastClosed: LeadStatusChangedEvent | undefined;
 };
 
 export const getDataStatusLead = async (
@@ -173,10 +175,16 @@ export const getDataStatusLead = async (
     (el) => el.value_after[0].lead_status.id === 73470054,
   );
 
+  // Последний закрытый
+  const leadLastClosed = statusChanged.find(
+    (el) => el.value_after[0].lead_status.id === 143,
+  );
+
   return {
     findLeadInProgress,
     leadStatusSerial,
     leadStatusEngine,
+    leadLastClosed,
   };
 };
 
@@ -200,8 +208,12 @@ export const getParamsLead = async ({
   // Новая заявка
   const leadStatusNewRequest = lead.created_at;
 
-  const { findLeadInProgress, leadStatusSerial, leadStatusEngine } =
-    await getDataStatusLead(amo, lead);
+  const {
+    findLeadInProgress,
+    leadStatusSerial,
+    leadStatusEngine,
+    leadLastClosed,
+  } = await getDataStatusLead(amo, lead);
 
   const getLeadStatusData = (leadCurrentStatus?: LeadStatusChangedEvent) => {
     if (!leadCurrentStatus || !findLeadInProgress) {
@@ -277,5 +289,6 @@ export const getParamsLead = async ({
     nameProduct, //AB
     dateFormatted, // Дата формата: 22 4 25,
     currentResponsible,
+    leadLastClosed,
   };
 };

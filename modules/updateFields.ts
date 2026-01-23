@@ -599,7 +599,17 @@ export const updateAllFiled = async (isAllField = false) => {
             nameIndustry,
             nameProduct,
             currentResponsible,
+            leadLastClosed,
           } = await getParamsLead({ lead, pipelinesMap, amo });
+
+          if (leadLastClosed) {
+            const [y, mon, d] = getDate(Number(leadLastClosed.created_at));
+
+            sheetUpdates.push({
+              range: `AV${rowNumber}:AV${rowNumber}`,
+              values: [[`${y}.${mon}.${d}`]],
+            });
+          }
 
           const [Y, MONTH, D, H, MIN] = getDate(leadStatusNewRequest || 0);
           let outputDateInProgress = '';

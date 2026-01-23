@@ -408,7 +408,7 @@ export class GoogleSheetService {
 // Специализированный класс для листа Time с дополнительной логикой
 export class TimeSheetService extends GoogleSheetService {
   constructor() {
-    super('Time', 1700, 45, 'AT');
+    super('Time', 1700, 45, 'AV');
   }
 }
 
