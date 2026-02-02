@@ -11,10 +11,6 @@ export interface Lead {
   pipeline_id: number;
   created_at: number;
   updated_at: number;
-  omTakenAt: number;
-  omTakenBy: string;
-  omAssignedAt: number;
-  omAssignedBy: string;
   custom_fields_values?: CustomFields[];
   responsible_user_id: number;
 }

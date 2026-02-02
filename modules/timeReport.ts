@@ -178,6 +178,7 @@ export const createReportTimeByPeriod = async (
   startDate?: string,
   endDate?: string,
 ) => {
+  console.log('Создаем тиаблицу');
   try {
     const { leads } = await getLeadsTodayOrByPeriod(startDate, endDate);
 
@@ -250,8 +251,6 @@ export const createReportTimeByPeriod = async (
     const resource = {
       values: googleSheetsData,
     };
-    console.log(googleSheetsData);
-    // await new TimeSheetService().createGoogleFields(resource);
     const sheetService = new TimeSheetService();
     await sheetService.createGoogleFieldsBatch(resource);
   } catch (error) {

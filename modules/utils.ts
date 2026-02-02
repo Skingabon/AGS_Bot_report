@@ -146,6 +146,9 @@ type returnTypeParamsLead = {
   dateFormatted: returnTypeParseDate;
   currentResponsible: IUser | null;
   leadLastClosed: LeadStatusChangedEvent | undefined;
+  leadPipelineQual: LeadStatusChangedEvent | undefined;
+  leadPipelineSerial: LeadStatusChangedEvent | undefined;
+  leadPipelineEng: LeadStatusChangedEvent | undefined;
 };
 
 type getDataStatusLeadReturn = {
@@ -153,6 +156,9 @@ type getDataStatusLeadReturn = {
   leadStatusSerial: LeadStatusChangedEvent | undefined;
   leadStatusEngine: LeadStatusChangedEvent | undefined;
   leadLastClosed: LeadStatusChangedEvent | undefined;
+  leadPipelineQual: LeadStatusChangedEvent | undefined;
+  leadPipelineSerial: LeadStatusChangedEvent | undefined;
+  leadPipelineEng: LeadStatusChangedEvent | undefined;
 };
 
 export const getDataStatusLead = async (
@@ -161,11 +167,22 @@ export const getDataStatusLead = async (
 ): Promise<getDataStatusLeadReturn> => {
   const statusChanged = await amo.getStatusChanged(lead.id);
 
+  if (!statusChanged.length) {
+    return {
+      findLeadInProgress: undefined,
+      leadStatusSerial: undefined,
+      leadStatusEngine: undefined,
+      leadLastClosed: undefined,
+      leadPipelineQual: undefined,
+      leadPipelineSerial: undefined,
+      leadPipelineEng: undefined,
+    };
+  }
+
   // Взято в работу
   const findLeadInProgress = statusChanged.find(
     (el) => el.value_after[0].lead_status.id === 50238952,
   );
-
   // Распред на квал серия
   const leadStatusSerial = statusChanged.find(
     (el) => el.value_after[0].lead_status.id === 56123746,
@@ -174,10 +191,21 @@ export const getDataStatusLead = async (
   const leadStatusEngine = statusChanged.find(
     (el) => el.value_after[0].lead_status.id === 73470054,
   );
-
   // Последний закрытый
   const leadLastClosed = statusChanged.find(
     (el) => el.value_after[0].lead_status.id === 143,
+  );
+  // Воронка квалификацию
+  const leadPipelineQual = statusChanged.find(
+    (el) => el.value_after[0].lead_status.pipeline_id === 5716552,
+  );
+  // Воронка серия
+  const leadPipelineSerial = statusChanged.find(
+    (el) => el.value_after[0].lead_status.pipeline_id === 1049386,
+  );
+  // Воронка инжиниринг
+  const leadPipelineEng = statusChanged.find(
+    (el) => el.value_after[0].lead_status.pipeline_id === 5110132,
   );
 
   return {
@@ -185,6 +213,9 @@ export const getDataStatusLead = async (
     leadStatusSerial,
     leadStatusEngine,
     leadLastClosed,
+    leadPipelineQual,
+    leadPipelineSerial,
+    leadPipelineEng,
   };
 };
 
@@ -213,6 +244,9 @@ export const getParamsLead = async ({
     leadStatusSerial,
     leadStatusEngine,
     leadLastClosed,
+    leadPipelineQual,
+    leadPipelineSerial,
+    leadPipelineEng,
   } = await getDataStatusLead(amo, lead);
 
   const getLeadStatusData = (leadCurrentStatus?: LeadStatusChangedEvent) => {
@@ -290,5 +324,8 @@ export const getParamsLead = async ({
     dateFormatted, // Дата формата: 22 4 25,
     currentResponsible,
     leadLastClosed,
+    leadPipelineQual,
+    leadPipelineSerial,
+    leadPipelineEng,
   };
 };

@@ -537,7 +537,6 @@ export const updateAllFiled = async (isAllField = false) => {
         const globalIndex = i + j;
         const rowNumber = globalIndex + startRow;
         const idLeadFromTable = row[0] || ''; // A
-        console.log('Обработка id lead: ' + idLeadFromTable);
         try {
           if (!idLeadFromTable) {
             sheetUpdates.push({
@@ -599,17 +598,10 @@ export const updateAllFiled = async (isAllField = false) => {
             nameIndustry,
             nameProduct,
             currentResponsible,
-            leadLastClosed,
+            leadPipelineQual,
+            leadPipelineEng,
+            leadPipelineSerial,
           } = await getParamsLead({ lead, pipelinesMap, amo });
-
-          if (leadLastClosed) {
-            const [y, mon, d] = getDate(Number(leadLastClosed.created_at));
-
-            sheetUpdates.push({
-              range: `AV${rowNumber}:AV${rowNumber}`,
-              values: [[`${y}.${mon}.${d}`]],
-            });
-          }
 
           const [Y, MONTH, D, H, MIN] = getDate(leadStatusNewRequest || 0);
           let outputDateInProgress = '';
@@ -619,6 +611,42 @@ export const updateAllFiled = async (isAllField = false) => {
             );
 
             outputDateInProgress = `${y}.${mon}.${d} ${h}:${min}`;
+          }
+
+          // Рассчет времени сделки в этапе
+          if (lead.status_id !== 143 && leadPipelineQual) {
+            const sortedStatusCreatedAt = [
+              leadPipelineQual.created_at,
+              leadPipelineSerial ? leadPipelineSerial.created_at : 0,
+              leadPipelineEng ? leadPipelineEng.created_at : 0,
+            ].sort((a, b) => b - a);
+
+            const actualStatusCreatedAt = sortedStatusCreatedAt[0];
+            // Текущее время
+            const now = new Date();
+            const currentHours = now.getHours();
+            const currentMinutes = now.getMinutes();
+
+            // Определяем, находимся ли в интервале 23:30 - 0:30
+            // Это интервал, который пересекает полночь
+            const isInSpecialInterval =
+              (currentHours === 23 && currentMinutes >= 30) || // 23:30 - 23:59
+              (currentHours === 1 && currentMinutes <= 30); // 00:00 - 00:30
+
+            // Исходная дельта
+            const delta = Date.now() / 1000 - actualStatusCreatedAt;
+
+            // Если находимся в специальном интервале, добавляем 9 часов (32400 секунд)
+            const adjustedDelta = isInSpecialInterval
+              ? delta + 9 * 3600 // Добавляем 9 часов в секундах
+              : delta;
+            const { dd, hh, mm } = formatDurationDDHHMM(adjustedDelta);
+            const outputDateDurationLead = `${dd}:${hh}:${mm}`;
+
+            sheetUpdates.push({
+              range: `AW${rowNumber}:AW${rowNumber}`,
+              values: [[outputDateDurationLead]],
+            });
           }
 
           // Добавляем обновления

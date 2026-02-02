@@ -347,15 +347,22 @@ export class AmoAPI {
   ): Promise<LeadResponsibleChangedEvent[]> {
     const url = `${this.baseUrl}/events?filter[entity]=lead&filter[entity_id]=${idLead}&filter[type]=entity_responsible_changed`;
     const response = await this.fetchWithAuth(url);
-    const data = await response.json();
 
+    if (response.status === 204) {
+      return [];
+    }
+
+    const data = await response.json();
     return data._embedded.events;
   }
   async getStatusChanged(idLead: number): Promise<LeadStatusChangedEvent[]> {
     const url = `${this.baseUrl}/events?filter[entity]=lead&filter[entity_id]=${idLead}&filter[type]=lead_status_changed`;
     const response = await this.fetchWithAuth(url);
-    const data = await response.json();
+    if (response.status === 204) {
+      return [];
+    }
 
+    const data = await response.json();
     return data._embedded.events;
   }
 }
