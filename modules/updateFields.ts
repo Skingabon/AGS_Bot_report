@@ -601,6 +601,7 @@ export const updateAllFiled = async (isAllField = false) => {
             leadPipelineQual,
             leadPipelineEng,
             leadPipelineSerial,
+            leadLastClosed,
           } = await getParamsLead({ lead, pipelinesMap, amo });
 
           const [Y, MONTH, D, H, MIN] = getDate(leadStatusNewRequest || 0);
@@ -611,6 +612,15 @@ export const updateAllFiled = async (isAllField = false) => {
             );
 
             outputDateInProgress = `${y}.${mon}.${d} ${h}:${min}`;
+          }
+
+          // Дата закрытия сделки
+          if (leadLastClosed && lead.status_id === 143) {
+            const [y, m, d] = getDate(leadLastClosed.created_at);
+            sheetUpdates.push({
+              range: `AV${rowNumber}:AV${rowNumber}`,
+              values: [[`${y}.${m}.${d}`]],
+            });
           }
 
           // Рассчет времени сделки в этапе
