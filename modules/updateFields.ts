@@ -692,15 +692,12 @@ export const updateAllFiled = async (isAllField = false) => {
             (pipelineName === 'Отдел инжиниринга' ||
               pipelineName === 'Отдел серийного оборудования' ||
               pipelineName === 'Квалификация') &&
-            (statusName === '7. Нецелевой лид' ||
-              statusName === '10. Закрыто и не реализовано' ||
-              statusName === '8. Закрыто и не реализовано')
+            lead.status_id === 143
           ) {
             techStatus = 'Отказ';
           }
           if (
-            statusName !== '10. Закрыто и не реализовано' &&
-            statusName !== '8. Закрыто и не реализовано' &&
+            lead.status_id !== 143 &&
             (pipelineName === 'Отдел инжиниринга' ||
               pipelineName === 'Отдел серийного оборудования')
           ) {
