@@ -327,18 +327,4 @@ export class ReportRowFactory {
   static isBaseRowEmpty(row: (string | number)[]): boolean {
     return !row[5] && !row[6] && !row[7]; // F, G, H пустые
   }
-
-  // Форматирование даты с апострофом для Google Sheets
-  static formatDateForGoogleSheets(timestamp: number): string {
-    const [y, mon, d] = getDate(timestamp);
-    // Добавляем апостроф для принудительного текстового формата
-    return `'${y}.${mon}.${d}`;
-  }
-
-  // Форматирование времени с апострофом для Google Sheets
-  static formatTimeForGoogleSheets(timestamp: number): string {
-    const [, , , , h, m, s] = getDate(timestamp);
-    // Добавляем апостроф для принудительного текстового формата
-    return `'${h}:${m}:${s}`;
-  }
 }

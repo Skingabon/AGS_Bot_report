@@ -2,6 +2,20 @@ import 'dotenv/config';
 import { google, GoogleApis } from 'googleapis';
 import { GoogleAuth } from 'google-auth-library';
 
+export function getIndexByLetters(letters: string) {
+  // Приводим к верхнему регистру и убираем пробелы
+  letters = letters.toUpperCase().trim();
+
+  let result = 0;
+
+  for (let i = 0; i < letters.length; i++) {
+    const charCode = letters.charCodeAt(i) - 65; // 'A' = 65, поэтому 65-65 = 0
+    result = result * 26 + charCode;
+  }
+
+  return result;
+}
+
 // Базовый класс для работы с Google Sheets
 export class GoogleSheetService {
   protected readonly SPREADSHEET_ID: string;
@@ -346,6 +360,7 @@ export class GoogleSheetService {
       throw error;
     }
   }
+
   // Получение строк с фильтрацией по leadId
   async expandSheet(additionalRows: number = 500): Promise<void> {
     try {
@@ -387,7 +402,10 @@ export class GoogleSheetService {
                   sheetId: sheetId,
                   gridProperties: {
                     rowCount: newRowCount,
-                    columnCount: Math.max(currentColCount, 41), // A:AE
+                    columnCount: Math.max(
+                      currentColCount,
+                      getIndexByLetters(this.endRangeColumn) + 10 + 1,
+                    ), // A:AF
                   },
                 },
                 fields: 'gridProperties.rowCount,gridProperties.columnCount',

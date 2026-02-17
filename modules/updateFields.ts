@@ -783,3 +783,246 @@ export const updateAllFiled = async (isAllField = false) => {
     }
   }
 };
+
+export const setFieldRefusal = async () => {
+  try {
+    const sheet = new TimeSheetService();
+    const amo = new AmoAPI();
+
+    const { data: allData, startRow } = await sheet.getDataWithRowNumbers(true);
+    // Инициализируем кэш пользователей
+    await amo.initUsersCache();
+
+    // Подготавливаем данные для пакетного обновления
+    const sheetUpdates: {
+      range: string;
+      values: (string | number)[][];
+    }[] = [];
+
+    const pipelinesResponse = await amo.getAllPipelines();
+    const pipelines = pipelinesResponse;
+    const pipelinesMap = pipelines.reduce(
+      (
+        acc: { [key: number]: string },
+        pipeline: { id: number; name: string },
+      ) => {
+        acc[pipeline.id] = pipeline.name;
+        return acc;
+      },
+      {},
+    );
+
+    const batchSize = 50;
+    let processedCount = 0;
+    let notFoundCount = 0;
+    let errorCount = 0;
+    // Обрабатываем лиды пакетами
+    for (let i = 0; i < allData.length; i += batchSize) {
+      const batch = allData.slice(i, i + batchSize);
+
+      for (let j = 0; j < batch.length; j++) {
+        const row = batch[j];
+        const globalIndex = i + j;
+        const rowNumber = globalIndex + startRow;
+        const idLeadFromTable = row[0] || ''; // A
+        try {
+          const idLead = Number(idLeadFromTable);
+          const lead = await amo.getLeadById(idLead);
+
+          // Обрабатываем случай когда сделка не найдена (204 No Content)
+          if (!lead) {
+            sheetUpdates.push({
+              range: `E${rowNumber}:F${rowNumber}`,
+              values: [['', '']],
+            });
+            sheetUpdates.push({
+              range: `X${rowNumber}:X${rowNumber}`,
+              values: [['']],
+            });
+            sheetUpdates.push({
+              range: `AC${rowNumber}:AC${rowNumber}`,
+              values: [['']],
+            });
+            sheetUpdates.push({
+              range: `AL${rowNumber}:AL${rowNumber}`,
+              values: [['']],
+            });
+            sheetUpdates.push({
+              range: `AV${rowNumber}:AW${rowNumber}`,
+              values: [['', '']],
+            });
+            notFoundCount++;
+            continue;
+          }
+
+          const {
+            reasonForRefusal,
+            statusName,
+            pipelineName,
+            serial,
+            engine,
+            currentResponsible,
+            leadPipelineQual,
+            leadPipelineEng,
+            leadPipelineSerial,
+            leadLastClosed,
+          } = await getParamsLead({ lead, pipelinesMap, amo });
+
+          // Причины отказа
+          if (
+            reasonForRefusal === 'HR' ||
+            reasonForRefusal === 'Спам' ||
+            reasonForRefusal === 'Дубль' ||
+            reasonForRefusal === 'AГС'
+          ) {
+            sheetUpdates.push({
+              range: `E${rowNumber}:F${rowNumber}`,
+              values: [[row[4], row[5]]],
+            });
+            sheetUpdates.push({
+              range: `X${rowNumber}:X${rowNumber}`,
+              values: [[row[23]]],
+            });
+            sheetUpdates.push({
+              range: `AC${rowNumber}:AC${rowNumber}`,
+              values: [[28]],
+            });
+            sheetUpdates.push({
+              range: `AL${rowNumber}:AL${rowNumber}`,
+              values: [[37]],
+            });
+            sheetUpdates.push({
+              range: `AV${rowNumber}:AW${rowNumber}`,
+              values: [[row[47], row[48]]],
+            });
+            continue;
+          }
+          if (leadLastClosed && lead.status_id === 143) {
+            // Дата закрытия сделки
+            const [y, m, d] = getDate(leadLastClosed.created_at);
+            sheetUpdates.push({
+              range: `AV${rowNumber}:AV${rowNumber}`,
+              values: [[`${y}.${m}.${d}`]],
+            });
+          }
+
+          // Рассчет времени сделки в этапе
+          if (lead.status_id !== 143 && leadPipelineQual) {
+            const sortedStatusCreatedAt = [
+              leadPipelineQual.created_at,
+              leadPipelineSerial ? leadPipelineSerial.created_at : 0,
+              leadPipelineEng ? leadPipelineEng.created_at : 0,
+            ].sort((a, b) => b - a);
+
+            const actualStatusCreatedAt = sortedStatusCreatedAt[0];
+            // Текущее время
+            const now = new Date();
+            const currentHours = now.getHours();
+            const currentMinutes = now.getMinutes();
+
+            // Определяем, находимся ли в интервале 23:30 - 0:30
+            // Это интервал, который пересекает полночь
+            const isInSpecialInterval =
+              (currentHours === 23 && currentMinutes >= 30) || // 23:30 - 23:59
+              (currentHours === 1 && currentMinutes <= 30); // 00:00 - 00:30
+
+            // Исходная дельта
+            const delta = Date.now() / 1000 - actualStatusCreatedAt;
+
+            // Если находимся в специальном интервале, добавляем 9 часов (32400 секунд)
+            const adjustedDelta = isInSpecialInterval
+              ? delta + 9 * 3600 // Добавляем 9 часов в секундах
+              : delta;
+            const { dd, hh, mm } = formatDurationDDHHMM(adjustedDelta);
+            const outputDateDurationLead = `${dd}:${hh}:${mm}`;
+
+            sheetUpdates.push({
+              range: `AW${rowNumber}:AW${rowNumber}`,
+              values: [[outputDateDurationLead]],
+            });
+          }
+
+          // Добавляем обновления
+          sheetUpdates.push({
+            range: `E${rowNumber}:F${rowNumber}`,
+            values: [[statusName, pipelineName]],
+          });
+
+          let techStatus = pipelineName;
+
+          if (reasonForRefusal) {
+            techStatus = 'Отказ';
+          }
+          if (
+            (pipelineName === 'Отдел инжиниринга' ||
+              pipelineName === 'Отдел серийного оборудования' ||
+              pipelineName === 'Квалификация') &&
+            lead.status_id === 143
+          ) {
+            techStatus = 'Отказ';
+          }
+          if (
+            lead.status_id !== 143 &&
+            (pipelineName === 'Отдел инжиниринга' ||
+              pipelineName === 'Отдел серийного оборудования')
+          ) {
+            techStatus = 'Кв. Лид';
+          }
+
+          sheetUpdates.push({
+            range: `AC${rowNumber}:AC${rowNumber}`,
+            values: [[techStatus]],
+          });
+
+          let techManager = '';
+          if (
+            !serial.responsible &&
+            !engine.responsible &&
+            currentResponsible &&
+            currentResponsible.id === 9380670
+          ) {
+            techManager = 'Не Квал';
+          } else {
+            const user = currentResponsible;
+            if (user) {
+              techManager = user.name;
+            }
+          }
+
+          sheetUpdates.push({
+            range: `AL${rowNumber}:AL${rowNumber}`,
+            values: [[techManager]],
+          });
+          sheetUpdates.push({
+            range: `X${rowNumber}:X${rowNumber}`,
+            values: [[reasonForRefusal]],
+          });
+
+          processedCount++;
+        } catch (err) {
+          errorCount++;
+          if (err instanceof Error) {
+            console.log(
+              `Ошибка при обработке лида ${batch[j]}: ${err.message}`,
+            );
+          }
+        }
+      }
+
+      // Пакетное обновление
+      if (sheetUpdates.length > 0) {
+        try {
+          await sheet.updateFieldsGooglePack(sheetUpdates);
+          sheetUpdates.length = 0;
+        } catch (updateError) {
+          console.error('Ошибка при обновлении Google Sheets:', updateError);
+          // Не очищаем sheetUpdates, попробуем еще раз в следующем пакете
+        }
+      }
+    }
+  } catch (error) {
+    if (error instanceof Error) {
+      console.log('error' + error.message);
+    }
+  }
+};

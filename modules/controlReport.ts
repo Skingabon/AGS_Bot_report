@@ -15,7 +15,7 @@ import {
 import { getStatusLead } from './statusList';
 import { ReportRowFactory } from './table/tableFabricControl';
 
-// const lastColumnName = 'AE';
+const lastColumnName = 'AF';
 
 // Функция создания базовых строк
 export const createReportControlByPeriod = async (
@@ -497,7 +497,7 @@ export const updateReportControlDaily = async (
               );
 
               updates.push({
-                range: `A${baseRowNumber}:AE${baseRowNumber}`,
+                range: `A${baseRowNumber}:${lastColumnName}${baseRowNumber}`,
                 values: [rowData],
               });
 

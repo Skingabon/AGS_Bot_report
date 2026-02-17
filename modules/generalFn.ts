@@ -1,5 +1,9 @@
 import { Context } from 'grammy';
-import { updateAllFiled, updateIncomingCall } from './updateFields';
+import {
+  setFieldRefusal,
+  updateAllFiled,
+  updateIncomingCall,
+} from './updateFields';
 import {
   createReportTimeByPeriod,
   getReportMarketing,
@@ -102,6 +106,12 @@ export const protectedReportMarketing = async (ctx: Context) => {
 };
 export const protectedReportControl = async (ctx: Context) => {
   await calendarReport(ctx, 'awaiting_start_date_report_control');
+};
+
+export const protectedSetFieldRefusal = async (ctx: Context) => {
+  await ctx.reply('Обновляю поля с отказами');
+  await setFieldRefusal();
+  await ctx.reply('Готово');
 };
 
 export const reportLeadYesterday = async (ctx: Context) => {

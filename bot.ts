@@ -20,6 +20,7 @@ import {
   sortTableByDate,
   createAndUpdateControl,
   protectedReportControl,
+  protectedSetFieldRefusal,
 } from './modules/generalFn';
 import { changeMonth } from './util/calendar';
 import { formatDateMMDDYYYYByDate } from './util/helper';
@@ -65,6 +66,7 @@ bot.callbackQuery('report-time-last-day', protectedReportTimeLastDay);
 bot.callbackQuery('report-time-period', protectedReportTimePeriod);
 bot.callbackQuery('send-google-link', protectedSendGoogleLink);
 bot.callbackQuery('report-marketing-period', protectedReportMarketing);
+bot.callbackQuery('btn-set-field-refusal', protectedSetFieldRefusal);
 bot.callbackQuery('report-control-period', protectedReportControl);
 
 bot.callbackQuery('report-lead-yesterday', reportLeadYesterday);

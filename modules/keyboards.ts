@@ -38,6 +38,8 @@ export const getBossMenu = () => {
     .row()
     .text('Отправить ссылку на Google Таблицу на почту', 'send-google-link')
     .row()
+    .text('Сверка по отказам', 'btn-set-field-refusal')
+    .row()
     .text('⚠️ Исх. звонки и все поля (all)', 'incoming-call')
     .row()
     .text('⚠️ Сортировка всей таблицы', 'sort-all')
