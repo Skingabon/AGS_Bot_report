@@ -1,7 +1,7 @@
 import { formatDate, getDate, getFieldValue } from '../util/helper';
 import { ControlSheetService } from '../services/apiGoogleTable';
 import { getLeadsTodayOrByPeriod } from './utils';
-import { DOMAIN } from './contants';
+import { DOMAIN, lastRowControl } from './contants';
 import {
   incomingActionDateFromContact,
   incomingCallDate,
@@ -14,8 +14,6 @@ import {
 } from '../interfaces';
 import { getStatusLead } from './statusList';
 import { ReportRowFactory } from './table/tableFabricControl';
-
-const lastColumnName = 'AF';
 
 // Функция создания базовых строк
 export const createReportControlByPeriod = async (
@@ -497,7 +495,7 @@ export const updateReportControlDaily = async (
               );
 
               updates.push({
-                range: `A${baseRowNumber}:${lastColumnName}${baseRowNumber}`,
+                range: `A${baseRowNumber}:${lastRowControl}${baseRowNumber}`,
                 values: [rowData],
               });
 

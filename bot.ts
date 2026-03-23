@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import cron from 'node-cron';
 import { Bot } from 'grammy';
+import { SocksProxyAgent } from 'socks-proxy-agent';
 import { createReportTimeByPeriod } from './modules/timeReport';
 import { sendGoogleSheetLinkByEmail } from './modules/emailSender';
 import { updateAllFiled, updateIncomingCall } from './modules/updateFields';
@@ -34,7 +35,25 @@ import {
   updateReportControlDaily,
 } from './modules/controlReport';
 
-const bot = new Bot(process.env.BOT_API_KEY || '');
+const useProxy = process.env.USE_PROXY === 'true';
+
+let botConfig: any = {};
+
+if (useProxy) {
+  const proxyAgent = new SocksProxyAgent(
+    `socks5://${process.env.PROXY_HOST}:${process.env.PROXY_PORT}`,
+  );
+
+  botConfig = {
+    client: {
+      baseFetchConfig: {
+        agent: proxyAgent,
+      },
+    },
+  };
+}
+
+const bot = new Bot(process.env.BOT_API_KEY || '', botConfig);
 
 bot.api.setMyCommands([
   { command: 'start', description: 'Start AGS_Bot_Report' },

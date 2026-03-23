@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { google, GoogleApis } from 'googleapis';
 import { GoogleAuth } from 'google-auth-library';
+import { lastRowControl, lastRowTime } from '../modules/contants';
 
 export function getIndexByLetters(letters: string) {
   // Приводим к верхнему регистру и убираем пробелы
@@ -84,30 +85,6 @@ export class GoogleSheetService {
 
     return response.data.values || [];
   }
-
-  // Получаю все поля из таблицы
-  // async getRangeValues(
-  //   startRange = this.startRangeColumn,
-  //   endRange = this.endRangeColumn,
-  // ): Promise<Array<string[]>> {
-  //   const sheets = this.google.sheets({ version: 'v4', auth: this.auth });
-  //
-  //   try {
-  //     const response = await sheets.spreadsheets.values.get({
-  //       spreadsheetId: this.SPREADSHEET_ID,
-  //       range: `${this.sheetName}!${startRange}:${endRange}`,
-  //       valueRenderOption: 'FORMATTED_VALUE',
-  //     });
-  //
-  //     return response.data.values || [];
-  //   } catch (error) {
-  //     console.error(
-  //       `Ошибка получения диапазона ${startRange}:${endRange}`,
-  //       error,
-  //     );
-  //     return [];
-  //   }
-  // }
 
   // Получаю все поля из таблицы
   async getRangeValues(
@@ -426,14 +403,14 @@ export class GoogleSheetService {
 // Специализированный класс для листа Time с дополнительной логикой
 export class TimeSheetService extends GoogleSheetService {
   constructor() {
-    super('Time', 5000, 45, 'AW');
+    super('Time', 5000, 45, lastRowTime);
   }
 }
 
 // Специализированный класс для листа Control
 export class ControlSheetService extends GoogleSheetService {
   constructor() {
-    super('Control', 3500, 31, 'AF');
+    super('Control', 3500, 31, lastRowControl);
   }
 
   // Пакетное обновление ячеек
