@@ -88,7 +88,7 @@ export const getLeadsTodayOrByPeriod = async (
     endOfDay.setHours(23, 59, 59, 999);
 
     // Конвертируем в Unix timestamp (секунды)
-    startTimestamp = Math.floor(startOfDay.getTime() / 1000); //TODO Для прода
+    startTimestamp = Math.floor(startOfDay.getTime() / 1000);
     endTimestamp = Math.floor(endOfDay.getTime() / 1000);
   } else {
     const startDateFormated = new Date(formatDateByPeriod(startDate));
